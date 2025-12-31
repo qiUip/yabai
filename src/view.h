@@ -158,6 +158,8 @@ struct window_node
     struct window_node *zoom;
     uint32_t window_list[NODE_MAX_WINDOW_COUNT];
     uint32_t window_order[NODE_MAX_WINDOW_COUNT];
+    uint8_t window_regions[NODE_MAX_WINDOW_COUNT];
+    float window_ratios[NODE_MAX_WINDOW_COUNT];
     int window_count;
     float ratio;
     enum window_node_split split;
@@ -171,7 +173,8 @@ enum view_type
     VIEW_DEFAULT,
     VIEW_BSP,
     VIEW_STACK,
-    VIEW_FLOAT
+    VIEW_FLOAT,
+    VIEW_MAIN_STACK
 };
 
 static const char *view_type_str[] =
@@ -179,23 +182,43 @@ static const char *view_type_str[] =
     "default",
     "bsp",
     "stack",
-    "float"
+    "float",
+    "main-stack"
 };
+
+enum main_layout_variant
+{
+    MAIN_VARIANT_TWO_COLUMN,
+    MAIN_VARIANT_THREE_COLUMN
+};
+
+static const char *main_layout_variant_str[] =
+{
+    "main-stack",
+    "main-center"
+};
+
+#define REGION_MASTER 0
+#define REGION_STACK 1
 
 enum view_flag
 {
-    VIEW_LAYOUT         = 0x001,
-    VIEW_TOP_PADDING    = 0x002,
-    VIEW_BOTTOM_PADDING = 0x004,
-    VIEW_LEFT_PADDING   = 0x008,
-    VIEW_RIGHT_PADDING  = 0x010,
-    VIEW_WINDOW_GAP     = 0x020,
-    VIEW_AUTO_BALANCE   = 0x040,
-    VIEW_ENABLE_PADDING = 0x080,
-    VIEW_ENABLE_GAP     = 0x100,
-    VIEW_IS_VALID       = 0x200,
-    VIEW_IS_DIRTY       = 0x400,
-    VIEW_SPLIT_TYPE     = 0x800,
+    VIEW_LAYOUT         = 0x0001,
+    VIEW_TOP_PADDING    = 0x0002,
+    VIEW_BOTTOM_PADDING = 0x0004,
+    VIEW_LEFT_PADDING   = 0x0008,
+    VIEW_RIGHT_PADDING  = 0x0010,
+    VIEW_WINDOW_GAP     = 0x0020,
+    VIEW_AUTO_BALANCE   = 0x0040,
+    VIEW_ENABLE_PADDING = 0x0080,
+    VIEW_ENABLE_GAP     = 0x0100,
+    VIEW_IS_VALID       = 0x0200,
+    VIEW_IS_DIRTY       = 0x0400,
+    VIEW_SPLIT_TYPE     = 0x0800,
+    VIEW_MAIN_VARIANT   = 0x1000,
+    VIEW_MAIN_NMASTER   = 0x2000,
+    VIEW_MAIN_STACK_MAX = 0x4000,
+    VIEW_MAIN_RATIO     = 0x8000,
 };
 
 struct view
@@ -213,6 +236,10 @@ struct view
     int window_gap;
     uint32_t auto_balance;
     uint64_t flags;
+    enum main_layout_variant main_variant;
+    uint8_t main_nmaster;
+    uint8_t main_stack_max;
+    float main_ratio;
 };
 
 #define view_check_flag(v, x) ((v)->flags  &  (x))
@@ -241,10 +268,14 @@ struct window_node *view_add_window_node(struct view *view, struct window *windo
 struct window_node *view_remove_window_node(struct view *view, struct window *window);
 uint32_t *view_find_window_list(struct view *view, int *window_count);
 
+void view_promote_window_to_master(struct view *view, uint32_t window_id);
+void view_swap_master_and_stack(struct view *view);
+
 void view_serialize(FILE *rsp, struct view *view, uint64_t flags);
 bool view_is_invalid(struct view *view);
 bool view_is_dirty(struct view *view);
 void view_flush(struct view *view);
+void view_flush_main_stack(struct view *view);
 void view_update(struct view *view);
 struct view *view_create(uint64_t sid);
 void view_destroy(struct view *view);

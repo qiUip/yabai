@@ -26,6 +26,10 @@ struct space_manager
     bool window_zoom_persist;
     uint32_t auto_balance;
     struct space_label *labels;
+    enum main_layout_variant main_variant;
+    uint8_t main_nmaster;
+    uint8_t main_stack_max;
+    float main_ratio;
 };
 
 enum space_op_error
@@ -85,6 +89,10 @@ void space_manager_set_split_type_for_all_spaces(struct space_manager *sm, enum 
 void space_manager_set_auto_balance_for_all_spaces(struct space_manager *sm, uint32_t auto_balance);
 bool space_manager_set_padding_for_space(struct space_manager *sm, uint64_t sid, int type, int top, int bottom, int left, int right);
 bool space_manager_toggle_padding_for_space(struct space_manager *sm, uint64_t sid);
+void space_manager_set_main_variant_for_space(struct space_manager *sm, uint64_t sid, enum main_layout_variant variant);
+void space_manager_set_main_nmaster_for_space(struct space_manager *sm, uint64_t sid, int nmaster);
+void space_manager_set_main_ratio_for_space(struct space_manager *sm, uint64_t sid, float ratio);
+void space_manager_set_main_stack_max_for_space(struct space_manager *sm, uint64_t sid, int max);
 bool space_manager_rotate_space(struct space_manager *sm, uint64_t sid, int degrees);
 bool space_manager_mirror_space(struct space_manager *sm, uint64_t sid, enum window_node_split axis);
 void space_manager_move_window_list_to_space(uint64_t sid, uint32_t *window_list, int window_count);

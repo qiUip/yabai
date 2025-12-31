@@ -183,6 +183,175 @@ static void area_make_pair(enum window_node_split split, int gap, float ratio, s
     }
 }
 
+static void calculate_two_column_areas(struct view *view, struct area *parent, struct area *master, struct area *stack_right, int stack_count)
+{
+    int gap = window_node_get_gap(view);
+    float ratio = view->main_ratio;
+
+    printf("[AREA] calculate_two_column: ratio=%.3f, flag=0x%llx, stack_count=%d\n", ratio, view->flags, stack_count);
+
+    *master = *parent;
+    *stack_right = *parent;
+
+    // If no stack windows, master takes 100%
+    if (stack_count == 0) {
+        master->w = parent->w;
+        stack_right->w = 0;
+        return;
+    }
+
+    // Normal case: split according to ratio
+    float master_width = (parent->w - gap) * ratio;
+    float stack_width = (parent->w - gap) * (1 - ratio);
+
+    master->w = (int)master_width;
+    stack_right->w = (int)stack_width;
+    stack_right->x = parent->x + (int)(master_width + 0.5f) + gap;
+}
+
+static void calculate_three_column_areas(struct view *view, struct area *parent, struct area *stack_left, struct area *master, struct area *stack_right, int stack_count)
+{
+    int gap = window_node_get_gap(view);
+    float master_ratio = view->main_ratio;
+
+    *stack_left = *parent;
+    *master = *parent;
+    *stack_right = *parent;
+
+    // If no stack windows at all, master takes 100%
+    if (stack_count == 0) {
+        master->w = parent->w;
+        stack_left->w = 0;
+        stack_right->w = 0;
+        return;
+    }
+
+    // If only one stack window, behave like two-column (no left stack)
+    if (stack_count == 1) {
+        float master_width = (parent->w - gap) * master_ratio;
+        float stack_width = (parent->w - gap) * (1.0f - master_ratio);
+
+        stack_left->w = 0;
+        master->w = (int)master_width;
+        stack_right->w = (int)stack_width;
+        stack_right->x = parent->x + (int)(master_width + 0.5f) + gap;
+        return;
+    }
+
+    // Normal case: split stack between left and right
+    float stack_ratio = (1.0f - master_ratio) / 2.0f;
+    int total_gap = gap * 2;
+    float stack_left_width = (parent->w - total_gap) * stack_ratio;
+    float master_width = (parent->w - total_gap) * master_ratio;
+    float stack_right_width = (parent->w - total_gap) * stack_ratio;
+
+    stack_left->w = (int)stack_left_width;
+    master->w = (int)master_width;
+    stack_right->w = (int)stack_right_width;
+
+    master->x = parent->x + (int)(stack_left_width + 0.5f) + gap;
+    stack_right->x = master->x + master->w + gap;
+}
+
+static void area_make_main_stack(struct view *view, struct area *parent, struct area *master, struct area *stack_left, struct area *stack_right, int stack_count)
+{
+    switch (view->main_variant) {
+        case MAIN_VARIANT_TWO_COLUMN:
+            calculate_two_column_areas(view, parent, master, stack_right, stack_count);
+            break;
+        case MAIN_VARIANT_THREE_COLUMN:
+            calculate_three_column_areas(view, parent, stack_left, master, stack_right, stack_count);
+            break;
+    }
+}
+
+static void assign_regions_to_windows(struct view *view, struct window_node *node)
+{
+    int nmaster = view->main_nmaster;
+    int master_end = (node->window_count < nmaster) ? node->window_count : nmaster;
+
+    // Assign regions: master (0..nmaster-1) and stack (nmaster..count-1)
+    for (int i = 0; i < node->window_count; i++) {
+        if (i < master_end) {
+            node->window_regions[i] = REGION_MASTER;
+        } else {
+            node->window_regions[i] = REGION_STACK;
+        }
+    }
+}
+
+
+static void tile_windows_in_region(struct area region_area, uint32_t *window_ids, float *window_ratios, int count, int gap, struct window_capture **captures)
+{
+    if (count == 0) {
+        printf("[TILE-RECURSIVE] count=0, returning\n");
+        return;
+    }
+
+    printf("[TILE-RECURSIVE] count=%d, region_h=%.0f\n", count, region_area.h);
+    debug("tile_windows_in_region: count=%d, area=(%.0f,%.0f,%.0fx%.0f)\n",
+          count, region_area.x, region_area.y, region_area.w, region_area.h);
+
+    if (count == 1) {
+        struct window *w = window_manager_find_window(&g_window_manager, window_ids[0]);
+        if (w) {
+            debug("  -> window %d at (%.0f,%.0f,%.0fx%.0f)\n",
+                  window_ids[0], region_area.x, region_area.y, region_area.w, region_area.h);
+            printf("[TILE] Window %d (LAST): ratio=%.3f, region_h=%.0f, actual_h=%.0f (100.0%% of remaining region)\n",
+                   window_ids[0], window_ratios[0], region_area.h, region_area.h);
+            ts_buf_push(*captures, ((struct window_capture) {
+                .window = w,
+                .x = region_area.x,
+                .y = region_area.y,
+                .w = region_area.w,
+                .h = region_area.h
+            }));
+        }
+        return;
+    }
+
+    struct area top_area = region_area;
+    struct area bottom_area = region_area;
+
+    // Calculate sum of ratios to renormalize (ratios must sum to 1.0 for current window set)
+    float sum_of_ratios = 0;
+    for (int i = 0; i < count; i++) {
+        sum_of_ratios += window_ratios[i];
+    }
+
+    // Split ratio is this window's ratio relative to all current windows
+    float split_ratio = (sum_of_ratios > 0) ? (window_ratios[0] / sum_of_ratios) : 0.5f;
+    float top_height = (region_area.h - gap) * split_ratio;
+
+    printf("[TILE-CALC] sum_of_ratios=%.3f, window_ratio=%.3f, split_ratio=%.3f\n",
+           sum_of_ratios, window_ratios[0], split_ratio);
+
+    top_area.h = (int)top_height;
+    bottom_area.h = region_area.h - (int)top_height - gap;
+    bottom_area.y = region_area.y + (int)top_height + gap;
+
+    printf("[TILE-SPLIT] top_h=%.0f, bottom_h=%.0f, remaining_count=%d\n",
+           top_area.h, bottom_area.h, count - 1);
+
+    struct window *w = window_manager_find_window(&g_window_manager, window_ids[0]);
+    if (w) {
+        debug("  -> window %d at (%.0f,%.0f,%.0fx%.0f)\n",
+              window_ids[0], top_area.x, top_area.y, top_area.w, top_area.h);
+        printf("[TILE] Window %d: ratio=%.3f, region_h=%.0f, gap=%d, calculated_h=%.0f, actual_h=%.0f (%.1f%% of region)\n",
+               window_ids[0], split_ratio, region_area.h, gap, top_height, top_area.h,
+               (top_area.h / region_area.h) * 100.0f);
+        ts_buf_push(*captures, ((struct window_capture) {
+            .window = w,
+            .x = top_area.x,
+            .y = top_area.y,
+            .w = top_area.w,
+            .h = top_area.h
+        }));
+    }
+
+    tile_windows_in_region(bottom_area, window_ids + 1, window_ratios + 1, count - 1, gap, captures);
+}
+
 static void area_make_pair_for_node(struct view *view, struct window_node *node)
 {
     enum window_node_split split = window_node_get_split(view, node);
@@ -358,6 +527,21 @@ static void window_node_clear_zoom(struct window_node *node)
 void window_node_capture_windows(struct window_node *node, struct window_capture **window_list)
 {
     if (window_node_is_leaf(node)) {
+        // Check if this node has region assignments (main-stack layout)
+        // If so, skip capturing - view_flush_main_stack already handled it
+        bool has_regions = false;
+        for (int i = 0; i < node->window_count; ++i) {
+            if (node->window_regions[i] != 0) {
+                has_regions = true;
+                break;
+            }
+        }
+
+        if (has_regions) {
+            debug("window_node_capture_windows: Skipping main-stack node with %d windows\n", node->window_count);
+            return;
+        }
+
         for (int i = 0; i < node->window_count; ++i) {
             struct window *window = window_manager_find_window(&g_window_manager, node->window_list[i]);
             if (window) {
@@ -373,9 +557,14 @@ void window_node_capture_windows(struct window_node *node, struct window_capture
 
 void window_node_flush(struct window_node *node)
 {
+    debug("window_node_flush called! node=%p, window_count=%d\n", (void*)node, node ? node->window_count : -1);
     struct window_capture *window_list = NULL;
     window_node_capture_windows(node, &window_list);
-    if (window_list) window_manager_animate_window_list(window_list, ts_buf_len(window_list));
+    if (window_list) {
+        int count = ts_buf_len(window_list);
+        debug("window_node_flush animating %d windows\n", count);
+        window_manager_animate_window_list(window_list, count);
+    }
 }
 
 bool window_node_contains_window(struct window_node *node, uint32_t window_id)
@@ -624,28 +813,39 @@ struct window_node *view_remove_window_node(struct view *view, struct window *wi
     if (!node) return NULL;
 
     if (node->window_count > 1) {
-        bool removed_entry = false;
-        bool removed_order = false;
+        // Find the indices to remove from both lists
+        int entry_index = -1;
+        int order_index = -1;
 
         for (int i = 0; i < node->window_count; ++i) {
-            if (!removed_entry && node->window_list[i] == window->id) {
-                memmove(node->window_list + i, node->window_list + i + 1, sizeof(uint32_t) * (node->window_count - i - 1));
-                removed_entry = true;
-            }
-
-            if (!removed_order && node->window_order[i] == window->id) {
-                memmove(node->window_order + i, node->window_order + i + 1, sizeof(uint32_t) * (node->window_count - i - 1));
-                removed_order = true;
-            }
+            if (node->window_list[i] == window->id) entry_index = i;
+            if (node->window_order[i] == window->id) order_index = i;
         }
 
-        assert(removed_entry);
-        assert(removed_order);
+        assert(entry_index != -1);
+        assert(order_index != -1);
+
+        // Shift all arrays at the entry_index (removes from window_list position)
+        memmove(node->window_list + entry_index, node->window_list + entry_index + 1,
+                sizeof(uint32_t) * (node->window_count - entry_index - 1));
+        memmove(node->window_regions + entry_index, node->window_regions + entry_index + 1,
+                sizeof(uint8_t) * (node->window_count - entry_index - 1));
+        memmove(node->window_ratios + entry_index, node->window_ratios + entry_index + 1,
+                sizeof(float) * (node->window_count - entry_index - 1));
+
+        // Shift window_order at the order_index
+        memmove(node->window_order + order_index, node->window_order + order_index + 1,
+                sizeof(uint32_t) * (node->window_count - order_index - 1));
+
         --node->window_count;
 
         if (view->insertion_point == window->id) {
             view->insertion_point = node->window_order[0];
         }
+
+        // Re-tile after removing window (important for main-stack layout)
+        view_update(view);
+        view_flush(view);
 
         return NULL;
     }
@@ -806,6 +1006,35 @@ struct window_node *view_add_window_node_with_insertion_point(struct view *view,
     } else if (view->layout == VIEW_STACK) {
         view_stack_window_node(view->root, window);
         return view->root;
+    } else if (view->layout == VIEW_MAIN_STACK) {
+        if (view->root->window_count >= NODE_MAX_WINDOW_COUNT) {
+            return NULL;
+        }
+
+        int master_count = 0;
+        for (int i = 0; i < view->root->window_count; i++) {
+            if (view->root->window_regions[i] == REGION_MASTER) master_count++;
+        }
+
+        int idx = view->root->window_count;
+        view->root->window_list[idx] = window->id;
+        memmove(view->root->window_order + 1, view->root->window_order, sizeof(uint32_t) * view->root->window_count);
+        view->root->window_order[0] = window->id;
+
+        if (master_count < view->main_nmaster) {
+            view->root->window_regions[idx] = REGION_MASTER;
+        } else {
+            view->root->window_regions[idx] = REGION_STACK;
+        }
+
+        view->root->window_count++;
+        printf("[ADD_WINDOW] Before view_update: window_count=%d, sid=%llu, space_visible=%d\n",
+               view->root->window_count, view->sid, space_is_visible(view->sid));
+        view_update(view);
+        printf("[ADD_WINDOW] After view_update: is_dirty=%d\n", view_is_dirty(view));
+        view_flush(view);
+        printf("[ADD_WINDOW] After view_flush: is_dirty=%d\n", view_is_dirty(view));
+        return view->root;
     }
 
     return NULL;
@@ -847,10 +1076,203 @@ bool view_is_dirty(struct view *view)
     return view_check_flag(view, VIEW_IS_DIRTY);
 }
 
+void view_flush_main_stack(struct view *view)
+{
+    struct window_node *node = view->root;
+    struct window_capture *window_list = NULL;
+
+    if (node->window_count == 0) return;
+
+    debug("view_flush_main_stack: window_count=%d, variant=%s\n",
+          node->window_count, main_layout_variant_str[view->main_variant]);
+
+    // Always assign regions (in case nmaster or variant changed)
+    assign_regions_to_windows(view, node);
+
+    // Check each region - if any window in a region has ratio 0, reinitialize that region only
+    bool master_needs_init = false, stack_needs_init = false;
+    int master_count = 0, stack_count = 0;
+
+    for (int i = 0; i < node->window_count; i++) {
+        if (node->window_regions[i] == REGION_MASTER) {
+            master_count++;
+            if (node->window_ratios[i] < 0.01f) master_needs_init = true;
+        } else {
+            stack_count++;
+            if (node->window_ratios[i] < 0.01f) stack_needs_init = true;
+        }
+    }
+
+    // Reinitialize ratios for regions that need it
+    if (master_needs_init || stack_needs_init) {
+        debug("Reinitializing ratios: master=%d, stack=%d\n",
+              master_needs_init, stack_needs_init);
+
+        for (int i = 0; i < node->window_count; i++) {
+            if (node->window_regions[i] == REGION_MASTER && master_needs_init) {
+                node->window_ratios[i] = (master_count > 0) ? (1.0f / master_count) : 1.0f;
+            } else if (node->window_regions[i] == REGION_STACK && stack_needs_init) {
+                node->window_ratios[i] = (stack_count > 0) ? (1.0f / stack_count) : 1.0f;
+            }
+        }
+    }
+
+    struct area master_area = {0};
+    struct area stack_left_area = {0};
+    struct area stack_right_area = {0};
+
+    area_make_main_stack(view, &node->area, &master_area, &stack_left_area, &stack_right_area, stack_count);
+
+    debug("Areas: parent=(%.0f,%.0f,%.0fx%.0f) master=(%.0f,%.0f,%.0fx%.0f) left=(%.0f,%.0f,%.0fx%.0f) right=(%.0f,%.0f,%.0fx%.0f)\n",
+          node->area.x, node->area.y, node->area.w, node->area.h,
+          master_area.x, master_area.y, master_area.w, master_area.h,
+          stack_left_area.x, stack_left_area.y, stack_left_area.w, stack_left_area.h,
+          stack_right_area.x, stack_right_area.y, stack_right_area.w, stack_right_area.h);
+
+    uint32_t master_windows[NODE_MAX_WINDOW_COUNT];
+    uint32_t stack_left_windows[NODE_MAX_WINDOW_COUNT];
+    uint32_t stack_right_windows[NODE_MAX_WINDOW_COUNT];
+    float master_ratios[NODE_MAX_WINDOW_COUNT];
+    float stack_left_ratios[NODE_MAX_WINDOW_COUNT];
+    float stack_right_ratios[NODE_MAX_WINDOW_COUNT];
+
+    // Collect windows and split stack between left/right based on variant
+    int m_idx = 0, sl_idx = 0, sr_idx = 0;
+    int stack_idx = 0;  // Index within stack windows
+
+    for (int i = 0; i < node->window_count; i++) {
+        if (node->window_regions[i] == REGION_MASTER) {
+            master_windows[m_idx] = node->window_list[i];
+            master_ratios[m_idx] = node->window_ratios[i];
+            m_idx++;
+        } else {
+            // Stack window - decide left or right based on variant
+            if (view->main_variant == MAIN_VARIANT_TWO_COLUMN) {
+                // All stack windows go to the right
+                stack_right_windows[sr_idx] = node->window_list[i];
+                stack_right_ratios[sr_idx] = node->window_ratios[i];
+                sr_idx++;
+            } else if (view->main_variant == MAIN_VARIANT_THREE_COLUMN) {
+                // Even indices (0,2,4...) go right, odd (1,3,5...) go left
+                if (stack_idx % 2 == 0) {
+                    stack_right_windows[sr_idx] = node->window_list[i];
+                    stack_right_ratios[sr_idx] = node->window_ratios[i];
+                    sr_idx++;
+                } else {
+                    stack_left_windows[sl_idx] = node->window_list[i];
+                    stack_left_ratios[sl_idx] = node->window_ratios[i];
+                    sl_idx++;
+                }
+            }
+            stack_idx++;
+        }
+    }
+
+    debug("Window distribution: master=%d, left=%d, right=%d\n",
+          m_idx, sl_idx, sr_idx);
+
+    int gap = window_node_get_gap(view);
+    tile_windows_in_region(master_area, master_windows, master_ratios, m_idx, gap, &window_list);
+    tile_windows_in_region(stack_left_area, stack_left_windows, stack_left_ratios, sl_idx, gap, &window_list);
+    tile_windows_in_region(stack_right_area, stack_right_windows, stack_right_ratios, sr_idx, gap, &window_list);
+
+    int capture_count = window_list ? ts_buf_len(window_list) : 0;
+    debug("About to animate %d windows, window_list=%p\n", capture_count, (void*)window_list);
+
+    if (window_list) {
+        window_manager_animate_window_list(window_list, ts_buf_len(window_list));
+        debug("Finished animating windows\n");
+    } else {
+        debug("ERROR: window_list is NULL!\n");
+    }
+}
+
+void view_promote_window_to_master(struct view *view, uint32_t window_id)
+{
+    if (view->layout != VIEW_MAIN_STACK) return;
+
+    struct window_node *node = view->root;
+    int window_idx = -1;
+
+    // Find the window
+    for (int i = 0; i < node->window_count; i++) {
+        if (node->window_list[i] == window_id) {
+            window_idx = i;
+            break;
+        }
+    }
+
+    if (window_idx == -1) return;
+
+    // If already in master region, do nothing
+    if (node->window_regions[window_idx] == REGION_MASTER) return;
+
+    // Find the first master window to swap with
+    int first_master_idx = -1;
+    for (int i = 0; i < node->window_count; i++) {
+        if (node->window_regions[i] == REGION_MASTER) {
+            first_master_idx = i;
+            break;
+        }
+    }
+
+    if (first_master_idx == -1) return;
+
+    // Swap the windows
+    uint32_t temp_id = node->window_list[first_master_idx];
+    node->window_list[first_master_idx] = node->window_list[window_idx];
+    node->window_list[window_idx] = temp_id;
+
+    uint8_t temp_region = node->window_regions[first_master_idx];
+    node->window_regions[first_master_idx] = node->window_regions[window_idx];
+    node->window_regions[window_idx] = temp_region;
+
+    view_flush(view);
+}
+
+void view_swap_master_and_stack(struct view *view)
+{
+    if (view->layout != VIEW_MAIN_STACK) return;
+
+    struct window_node *node = view->root;
+
+    // Find first master and first stack window
+    int first_master = -1, first_stack = -1;
+    for (int i = 0; i < node->window_count; i++) {
+        if (node->window_regions[i] == REGION_MASTER && first_master == -1) {
+            first_master = i;
+        } else if (node->window_regions[i] != REGION_MASTER && first_stack == -1) {
+            first_stack = i;
+        }
+        if (first_master != -1 && first_stack != -1) break;
+    }
+
+    if (first_master == -1 || first_stack == -1) return;
+
+    // Swap them
+    uint32_t temp_id = node->window_list[first_master];
+    node->window_list[first_master] = node->window_list[first_stack];
+    node->window_list[first_stack] = temp_id;
+
+    uint8_t temp_region = node->window_regions[first_master];
+    node->window_regions[first_master] = node->window_regions[first_stack];
+    node->window_regions[first_stack] = temp_region;
+
+    view_flush(view);
+}
+
 void view_flush(struct view *view)
 {
     if (space_is_visible(view->sid)) {
-        window_node_flush(view->root);
+        debug("view_flush: layout=%s, main_variant=%s, sid=%llu\n",
+              view_type_str[view->layout],
+              (view->layout == VIEW_MAIN_STACK) ? main_layout_variant_str[view->main_variant] : "N/A",
+              view->sid);
+        if (view->layout == VIEW_MAIN_STACK) {
+            view_flush_main_stack(view);
+        } else {
+            window_node_flush(view->root);
+        }
         view_clear_flag(view, VIEW_IS_DIRTY);
     } else {
         view_set_flag(view, VIEW_IS_DIRTY);
@@ -960,6 +1382,16 @@ void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
         if (did_output) fprintf(rsp, ",\n");
 
         fprintf(rsp, "\t\"is-native-fullscreen\":%s", json_bool(space_is_fullscreen(view->sid)));
+        did_output = true;
+    }
+
+    if (view->layout == VIEW_MAIN_STACK) {
+        if (did_output) fprintf(rsp, ",\n");
+
+        fprintf(rsp, "\t\"main-variant\":\"%s\"", main_layout_variant_str[view->main_variant]);
+        fprintf(rsp, ",\n\t\"main-nmaster\":%d", view->main_nmaster);
+        fprintf(rsp, ",\n\t\"main-ratio\":%.4f", view->main_ratio);
+        fprintf(rsp, ",\n\t\"main-stack-max\":%d", view->main_stack_max);
     }
 
     fprintf(rsp, "\n}");
@@ -1006,6 +1438,10 @@ struct view *view_create(uint64_t sid)
         if (!view_check_flag(view, VIEW_WINDOW_GAP))     view->window_gap     = g_space_manager.window_gap;
         if (!view_check_flag(view, VIEW_AUTO_BALANCE))   view->auto_balance   = g_space_manager.auto_balance;
         if (!view_check_flag(view, VIEW_SPLIT_TYPE))     view->split_type     = g_space_manager.split_type;
+        if (!view_check_flag(view, VIEW_MAIN_VARIANT))   view->main_variant   = g_space_manager.main_variant;
+        if (!view_check_flag(view, VIEW_MAIN_NMASTER))   view->main_nmaster   = g_space_manager.main_nmaster;
+        if (!view_check_flag(view, VIEW_MAIN_STACK_MAX)) view->main_stack_max = g_space_manager.main_stack_max;
+        if (!view_check_flag(view, VIEW_MAIN_RATIO))     view->main_ratio     = g_space_manager.main_ratio;
         view_update(view);
     } else {
         view->layout = VIEW_FLOAT;

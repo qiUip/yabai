@@ -46,6 +46,9 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_SPLIT_RATIO           "split_ratio"
 #define COMMAND_CONFIG_SPLIT_TYPE            "split_type"
 #define COMMAND_CONFIG_AUTO_BALANCE          "auto_balance"
+#define COMMAND_CONFIG_MAIN_NMASTER          "main_nmaster"
+#define COMMAND_CONFIG_MAIN_RATIO            "main_ratio"
+#define COMMAND_CONFIG_MAIN_STACK_MAX        "main_stack_max"
 #define COMMAND_CONFIG_MOUSE_MOD             "mouse_modifier"
 #define COMMAND_CONFIG_MOUSE_ACTION1         "mouse_action1"
 #define COMMAND_CONFIG_MOUSE_ACTION2         "mouse_action2"
@@ -124,6 +127,11 @@ extern bool g_verbose;
 #define ARGUMENT_SPACE_LAYOUT_BSP   "bsp"
 #define ARGUMENT_SPACE_LAYOUT_STACK "stack"
 #define ARGUMENT_SPACE_LAYOUT_FLT   "float"
+#define ARGUMENT_SPACE_LAYOUT_MAIN_STACK "main-stack"
+#define ARGUMENT_SPACE_LAYOUT_MAIN_CENTER "main-center"
+#define COMMAND_SPACE_MAIN_NMASTER  "--main-nmaster"
+#define COMMAND_SPACE_MAIN_RATIO    "--main-ratio"
+#define COMMAND_SPACE_MAIN_STACK_MAX "--main-stack-max"
 /* ----------------------------------------------------------------------------- */
 
 /* --------------------------------DOMAIN WINDOW-------------------------------- */
@@ -135,6 +143,8 @@ extern bool g_verbose;
 #define COMMAND_WINDOW_SPACE      "--space"
 #define COMMAND_WINDOW_SWAP       "--swap"
 #define COMMAND_WINDOW_WARP       "--warp"
+#define COMMAND_WINDOW_PROMOTE    "--promote"
+#define COMMAND_WINDOW_SWAP_MASTER_STACK "--swap-master-stack"
 #define COMMAND_WINDOW_STACK      "--stack"
 #define COMMAND_WINDOW_INSERT     "--insert"
 #define COMMAND_WINDOW_GRID       "--grid"
@@ -1511,6 +1521,26 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                     } else {
                         daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
                     }
+                } else if (token_equals(value, ARGUMENT_SPACE_LAYOUT_MAIN_STACK)) {
+                    if (space_is_user(sel_sid)) {
+                        view_set_flag(view, VIEW_LAYOUT);
+                        view->layout = VIEW_MAIN_STACK;
+                        view->main_variant = MAIN_VARIANT_TWO_COLUMN;
+                        view_clear(view);
+                        window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, sel_sid);
+                    } else {
+                        daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
+                    }
+                } else if (token_equals(value, ARGUMENT_SPACE_LAYOUT_MAIN_CENTER)) {
+                    if (space_is_user(sel_sid)) {
+                        view_set_flag(view, VIEW_LAYOUT);
+                        view->layout = VIEW_MAIN_STACK;
+                        view->main_variant = MAIN_VARIANT_THREE_COLUMN;
+                        view_clear(view);
+                        window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, sel_sid);
+                    } else {
+                        daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
+                    }
                 } else {
                     daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
                 }
@@ -1523,6 +1553,12 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                     space_manager_set_layout_for_all_spaces(&g_space_manager, VIEW_STACK);
                 } else if (token_equals(value, ARGUMENT_CONFIG_LAYOUT_FLOAT)) {
                     space_manager_set_layout_for_all_spaces(&g_space_manager, VIEW_FLOAT);
+                } else if (token_equals(value, ARGUMENT_SPACE_LAYOUT_MAIN_STACK)) {
+                    space_manager_set_layout_for_all_spaces(&g_space_manager, VIEW_MAIN_STACK);
+                    g_space_manager.main_variant = MAIN_VARIANT_TWO_COLUMN;
+                } else if (token_equals(value, ARGUMENT_SPACE_LAYOUT_MAIN_CENTER)) {
+                    space_manager_set_layout_for_all_spaces(&g_space_manager, VIEW_MAIN_STACK);
+                    g_space_manager.main_variant = MAIN_VARIANT_THREE_COLUMN;
                 } else {
                     daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
                 }
@@ -1601,6 +1637,66 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                     space_manager_set_auto_balance_for_all_spaces(&g_space_manager, SPLIT_Y);
                 } else {
                     daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+                }
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_MAIN_NMASTER)) {
+            struct token_value value = token_to_value(get_token(&message));
+            if (sel_sid) {
+                struct view *view = space_manager_find_view(&g_space_manager, sel_sid);
+                if (value.type == TOKEN_TYPE_INVALID) {
+                    fprintf(rsp, "%d\n", view->main_nmaster);
+                } else if (value.type == TOKEN_TYPE_INT && in_range_ii(value.int_value, 1, 4)) {
+                    space_manager_set_main_nmaster_for_space(&g_space_manager, sel_sid, value.int_value);
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be between 1 and 4.\n", command.length, command.text);
+                }
+            } else {
+                if (value.type == TOKEN_TYPE_INVALID) {
+                    fprintf(rsp, "%d\n", g_space_manager.main_nmaster);
+                } else if (value.type == TOKEN_TYPE_INT && in_range_ii(value.int_value, 1, 4)) {
+                    g_space_manager.main_nmaster = value.int_value;
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be between 1 and 4.\n", command.length, command.text);
+                }
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_MAIN_RATIO)) {
+            struct token_value value = token_to_value(get_token(&message));
+            if (sel_sid) {
+                struct view *view = space_manager_find_view(&g_space_manager, sel_sid);
+                if (value.type == TOKEN_TYPE_INVALID) {
+                    fprintf(rsp, "%.4f\n", view->main_ratio);
+                } else if (value.type == TOKEN_TYPE_FLOAT && in_range_ii(value.float_value, 0.1f, 0.9f)) {
+                    space_manager_set_main_ratio_for_space(&g_space_manager, sel_sid, value.float_value);
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be between 0.1 and 0.9.\n", command.length, command.text);
+                }
+            } else {
+                if (value.type == TOKEN_TYPE_INVALID) {
+                    fprintf(rsp, "%.4f\n", g_space_manager.main_ratio);
+                } else if (value.type == TOKEN_TYPE_FLOAT && in_range_ii(value.float_value, 0.1f, 0.9f)) {
+                    g_space_manager.main_ratio = value.float_value;
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be between 0.1 and 0.9.\n", command.length, command.text);
+                }
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_MAIN_STACK_MAX)) {
+            struct token_value value = token_to_value(get_token(&message));
+            if (sel_sid) {
+                struct view *view = space_manager_find_view(&g_space_manager, sel_sid);
+                if (value.type == TOKEN_TYPE_INVALID) {
+                    fprintf(rsp, "%d\n", view->main_stack_max);
+                } else if (value.type == TOKEN_TYPE_INT && in_range_ii(value.int_value, 1, 32)) {
+                    space_manager_set_main_stack_max_for_space(&g_space_manager, sel_sid, value.int_value);
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be between 1 and 32.\n", command.length, command.text);
+                }
+            } else {
+                if (value.type == TOKEN_TYPE_INVALID) {
+                    fprintf(rsp, "%d\n", g_space_manager.main_stack_max);
+                } else if (value.type == TOKEN_TYPE_INT && in_range_ii(value.int_value, 1, 32)) {
+                    g_space_manager.main_stack_max = value.int_value;
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be between 1 and 32.\n", command.length, command.text);
                 }
             }
         } else if (token_equals(command, COMMAND_CONFIG_MOUSE_MOD)) {
@@ -2012,6 +2108,34 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                 } else {
                     daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
                 }
+            } else if (token_equals(value, ARGUMENT_SPACE_LAYOUT_MAIN_STACK)) {
+                if (space_is_user(acting_sid)) {
+                    struct view *view = space_manager_find_view(&g_space_manager, acting_sid);
+                    debug("Setting layout to main-stack (two-column) for sid=%llu\n", acting_sid);
+                    view_set_flag(view, VIEW_LAYOUT);
+                    view->layout = VIEW_MAIN_STACK;
+                    view_set_flag(view, VIEW_MAIN_VARIANT);
+                    view->main_variant = MAIN_VARIANT_TWO_COLUMN;
+                    debug("Before view_clear: layout=%s\n", view_type_str[view->layout]);
+                    view_clear(view);
+                    debug("After view_clear: layout=%s\n", view_type_str[view->layout]);
+                    window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, acting_sid);
+                    debug("After validate: layout=%s\n", view_type_str[view->layout]);
+                } else {
+                    daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
+                }
+            } else if (token_equals(value, ARGUMENT_SPACE_LAYOUT_MAIN_CENTER)) {
+                if (space_is_user(acting_sid)) {
+                    struct view *view = space_manager_find_view(&g_space_manager, acting_sid);
+                    view_set_flag(view, VIEW_LAYOUT);
+                    view->layout = VIEW_MAIN_STACK;
+                    view_set_flag(view, VIEW_MAIN_VARIANT);
+                    view->main_variant = MAIN_VARIANT_THREE_COLUMN;
+                    view_clear(view);
+                    window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, acting_sid);
+                } else {
+                    daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
+                }
             } else {
                 daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
             }
@@ -2025,6 +2149,30 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                         daemon_fail(rsp, "the selected space was not associated with a label!\n");
                     }
                 }
+            }
+        } else if (token_equals(command, COMMAND_SPACE_MAIN_NMASTER)) {
+            struct token value = get_token(&message);
+            int nmaster = atoi(value.text);
+            if (nmaster < 1 || nmaster > 4) {
+                daemon_fail(rsp, "value for '%.*s' must be between 1 and 4.\n", command.length, command.text);
+            } else {
+                space_manager_set_main_nmaster_for_space(&g_space_manager, acting_sid, nmaster);
+            }
+        } else if (token_equals(command, COMMAND_SPACE_MAIN_RATIO)) {
+            struct token value = get_token(&message);
+            float ratio = strtof(value.text, NULL);
+            if (ratio < 0.1f || ratio > 0.9f) {
+                daemon_fail(rsp, "value for '%.*s' must be between 0.1 and 0.9.\n", command.length, command.text);
+            } else {
+                space_manager_set_main_ratio_for_space(&g_space_manager, acting_sid, ratio);
+            }
+        } else if (token_equals(command, COMMAND_SPACE_MAIN_STACK_MAX)) {
+            struct token value = get_token(&message);
+            int max = atoi(value.text);
+            if (max < 1 || max > 20) {
+                daemon_fail(rsp, "value for '%.*s' must be between 1 and 20.\n", command.length, command.text);
+            } else {
+                space_manager_set_main_stack_max_for_space(&g_space_manager, acting_sid, max);
             }
         } else {
             daemon_fail(rsp, "unknown command '%.*s' for domain '%.*s'\n", command.length, command.text, domain.length, domain.text);
@@ -2179,6 +2327,22 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
                 } else if (result == WINDOW_OP_ERROR_SAME_WINDOW) {
                     daemon_fail(rsp, "cannot warp a window onto itself.\n");
                 }
+            }
+        } else if (token_equals(command, COMMAND_WINDOW_PROMOTE)) {
+            uint64_t sid = window_space(acting_window->id);
+            struct view *view = space_manager_find_view(&g_space_manager, sid);
+            if (view && view->layout == VIEW_MAIN_STACK) {
+                view_promote_window_to_master(view, acting_window->id);
+            } else {
+                daemon_fail(rsp, "the acting window is not within a main-stack space.\n");
+            }
+        } else if (token_equals(command, COMMAND_WINDOW_SWAP_MASTER_STACK)) {
+            uint64_t sid = window_space(acting_window->id);
+            struct view *view = space_manager_find_view(&g_space_manager, sid);
+            if (view && view->layout == VIEW_MAIN_STACK) {
+                view_swap_master_and_stack(view);
+            } else {
+                daemon_fail(rsp, "the acting window is not within a main-stack space.\n");
             }
         } else if (token_equals(command, COMMAND_WINDOW_STACK)) {
             struct selector selector = parse_window_selector(rsp, &message, acting_window, false);

@@ -1126,6 +1126,10 @@ void space_manager_begin(struct space_manager *sm)
     sm->window_insertion_point = INSERT_FOCUSED;
     sm->window_zoom_persist = true;
     sm->labels = NULL;
+    sm->main_variant = MAIN_VARIANT_TWO_COLUMN;
+    sm->main_nmaster = 1;
+    sm->main_stack_max = 9;
+    sm->main_ratio = 0.55f;
     table_init(&sm->view, 23, hash_view, compare_view);
 
     int display_count;
@@ -1146,4 +1150,48 @@ void space_manager_begin(struct space_manager *sm)
     sm->current_space_id = space_manager_active_space();
     sm->last_space_id = sm->current_space_id;
     sm->did_begin = true;
+}
+
+void space_manager_set_main_variant_for_space(struct space_manager *sm, uint64_t sid, enum main_layout_variant variant)
+{
+    struct view *view = space_manager_find_view(sm, sid);
+    if (view->layout != VIEW_MAIN_STACK) return;
+
+    view_set_flag(view, VIEW_MAIN_VARIANT);
+    view->main_variant = variant;
+    view_update(view);
+    view_flush(view);
+}
+
+void space_manager_set_main_nmaster_for_space(struct space_manager *sm, uint64_t sid, int nmaster)
+{
+    struct view *view = space_manager_find_view(sm, sid);
+    if (view->layout != VIEW_MAIN_STACK) return;
+
+    view_set_flag(view, VIEW_MAIN_NMASTER);
+    view->main_nmaster = nmaster < 1 ? 1 : (nmaster > 4 ? 4 : nmaster);
+    view_update(view);
+    view_flush(view);
+}
+
+void space_manager_set_main_ratio_for_space(struct space_manager *sm, uint64_t sid, float ratio)
+{
+    struct view *view = space_manager_find_view(sm, sid);
+    if (view->layout != VIEW_MAIN_STACK) return;
+
+    view_set_flag(view, VIEW_MAIN_RATIO);
+    view->main_ratio = ratio < 0.1f ? 0.1f : (ratio > 0.9f ? 0.9f : ratio);
+    view_update(view);
+    view_flush(view);
+}
+
+void space_manager_set_main_stack_max_for_space(struct space_manager *sm, uint64_t sid, int max)
+{
+    struct view *view = space_manager_find_view(sm, sid);
+    if (view->layout != VIEW_MAIN_STACK) return;
+
+    view_set_flag(view, VIEW_MAIN_STACK_MAX);
+    view->main_stack_max = max < 1 ? 1 : (max > 20 ? 20 : max);
+    view_update(view);
+    view_flush(view);
 }
