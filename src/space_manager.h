@@ -90,6 +90,7 @@ void space_manager_set_auto_balance_for_all_spaces(struct space_manager *sm, uin
 bool space_manager_set_padding_for_space(struct space_manager *sm, uint64_t sid, int type, int top, int bottom, int left, int right);
 bool space_manager_toggle_padding_for_space(struct space_manager *sm, uint64_t sid);
 void space_manager_set_main_variant_for_space(struct space_manager *sm, uint64_t sid, enum main_layout_variant variant);
+void space_manager_set_main_variant_for_all_spaces(struct space_manager *sm, enum main_layout_variant variant);
 void space_manager_set_main_nmaster_for_space(struct space_manager *sm, uint64_t sid, int nmaster);
 void space_manager_set_main_ratio_for_space(struct space_manager *sm, uint64_t sid, float ratio);
 void space_manager_set_main_stack_max_for_space(struct space_manager *sm, uint64_t sid, int max);

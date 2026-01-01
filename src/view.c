@@ -183,44 +183,44 @@ static void area_make_pair(enum window_node_split split, int gap, float ratio, s
     }
 }
 
-static void calculate_two_column_areas(struct view *view, struct area *parent, struct area *master, struct area *stack_right, int stack_count)
+static void calculate_two_column_areas(struct view *view, struct area *parent, struct area *main, struct area *stack_right, int stack_count)
 {
     int gap = window_node_get_gap(view);
     float ratio = view->main_ratio;
 
     printf("[AREA] calculate_two_column: ratio=%.3f, flag=0x%llx, stack_count=%d\n", ratio, view->flags, stack_count);
 
-    *master = *parent;
+    *main = *parent;
     *stack_right = *parent;
 
-    // If no stack windows, master takes 100%
+    // If no stack windows, main takes 100%
     if (stack_count == 0) {
-        master->w = parent->w;
+        main->w = parent->w;
         stack_right->w = 0;
         return;
     }
 
     // Normal case: split according to ratio
-    float master_width = (parent->w - gap) * ratio;
+    float main_width = (parent->w - gap) * ratio;
     float stack_width = (parent->w - gap) * (1 - ratio);
 
-    master->w = (int)master_width;
+    main->w = (int)main_width;
     stack_right->w = (int)stack_width;
-    stack_right->x = parent->x + (int)(master_width + 0.5f) + gap;
+    stack_right->x = parent->x + (int)(main_width + 0.5f) + gap;
 }
 
-static void calculate_three_column_areas(struct view *view, struct area *parent, struct area *stack_left, struct area *master, struct area *stack_right, int stack_count)
+static void calculate_three_column_areas(struct view *view, struct area *parent, struct area *stack_left, struct area *main, struct area *stack_right, int stack_count)
 {
     int gap = window_node_get_gap(view);
-    float master_ratio = view->main_ratio;
+    float main_ratio = view->main_ratio;
 
     *stack_left = *parent;
-    *master = *parent;
+    *main = *parent;
     *stack_right = *parent;
 
-    // If no stack windows at all, master takes 100%
+    // If no stack windows at all, main takes 100%
     if (stack_count == 0) {
-        master->w = parent->w;
+        main->w = parent->w;
         stack_left->w = 0;
         stack_right->w = 0;
         return;
@@ -228,39 +228,39 @@ static void calculate_three_column_areas(struct view *view, struct area *parent,
 
     // If only one stack window, behave like two-column (no left stack)
     if (stack_count == 1) {
-        float master_width = (parent->w - gap) * master_ratio;
-        float stack_width = (parent->w - gap) * (1.0f - master_ratio);
+        float main_width = (parent->w - gap) * main_ratio;
+        float stack_width = (parent->w - gap) * (1.0f - main_ratio);
 
         stack_left->w = 0;
-        master->w = (int)master_width;
+        main->w = (int)main_width;
         stack_right->w = (int)stack_width;
-        stack_right->x = parent->x + (int)(master_width + 0.5f) + gap;
+        stack_right->x = parent->x + (int)(main_width + 0.5f) + gap;
         return;
     }
 
     // Normal case: split stack between left and right
-    float stack_ratio = (1.0f - master_ratio) / 2.0f;
+    float stack_ratio = (1.0f - main_ratio) / 2.0f;
     int total_gap = gap * 2;
     float stack_left_width = (parent->w - total_gap) * stack_ratio;
-    float master_width = (parent->w - total_gap) * master_ratio;
+    float main_width = (parent->w - total_gap) * main_ratio;
     float stack_right_width = (parent->w - total_gap) * stack_ratio;
 
     stack_left->w = (int)stack_left_width;
-    master->w = (int)master_width;
+    main->w = (int)main_width;
     stack_right->w = (int)stack_right_width;
 
-    master->x = parent->x + (int)(stack_left_width + 0.5f) + gap;
-    stack_right->x = master->x + master->w + gap;
+    main->x = parent->x + (int)(stack_left_width + 0.5f) + gap;
+    stack_right->x = main->x + main->w + gap;
 }
 
-static void area_make_main_stack(struct view *view, struct area *parent, struct area *master, struct area *stack_left, struct area *stack_right, int stack_count)
+static void area_make_main_stack(struct view *view, struct area *parent, struct area *main, struct area *stack_left, struct area *stack_right, int stack_count)
 {
     switch (view->main_variant) {
         case MAIN_VARIANT_TWO_COLUMN:
-            calculate_two_column_areas(view, parent, master, stack_right, stack_count);
+            calculate_two_column_areas(view, parent, main, stack_right, stack_count);
             break;
         case MAIN_VARIANT_THREE_COLUMN:
-            calculate_three_column_areas(view, parent, stack_left, master, stack_right, stack_count);
+            calculate_three_column_areas(view, parent, stack_left, main, stack_right, stack_count);
             break;
     }
 }
@@ -268,12 +268,12 @@ static void area_make_main_stack(struct view *view, struct area *parent, struct 
 static void assign_regions_to_windows(struct view *view, struct window_node *node)
 {
     int nmaster = view->main_nmaster;
-    int master_end = (node->window_count < nmaster) ? node->window_count : nmaster;
+    int main_end = (node->window_count < nmaster) ? node->window_count : nmaster;
 
-    // Assign regions: master (0..nmaster-1) and stack (nmaster..count-1)
+    // Assign regions: main (0..nmaster-1) and stack (nmaster..count-1)
     for (int i = 0; i < node->window_count; i++) {
-        if (i < master_end) {
-            node->window_regions[i] = REGION_MASTER;
+        if (i < main_end) {
+            node->window_regions[i] = REGION_MAIN;
         } else {
             node->window_regions[i] = REGION_STACK;
         }
@@ -999,9 +999,9 @@ struct window_node *view_add_window_node_with_insertion_point(struct view *view,
             return NULL;
         }
 
-        int master_count = 0;
+        int main_count = 0;
         for (int i = 0; i < view->root->window_count; i++) {
-            if (view->root->window_regions[i] == REGION_MASTER) master_count++;
+            if (view->root->window_regions[i] == REGION_MAIN) main_count++;
         }
 
         int idx = view->root->window_count;
@@ -1009,8 +1009,8 @@ struct window_node *view_add_window_node_with_insertion_point(struct view *view,
         memmove(view->root->window_order + 1, view->root->window_order, sizeof(uint32_t) * view->root->window_count);
         view->root->window_order[0] = window->id;
 
-        if (master_count < view->main_nmaster) {
-            view->root->window_regions[idx] = REGION_MASTER;
+        if (main_count < view->main_nmaster) {
+            view->root->window_regions[idx] = REGION_MAIN;
         } else {
             view->root->window_regions[idx] = REGION_STACK;
         }
@@ -1074,13 +1074,13 @@ void view_flush_main_stack(struct view *view)
     assign_regions_to_windows(view, node);
 
     // Check each region - if any window in a region has ratio 0, reinitialize that region only
-    bool master_needs_init = false, stack_needs_init = false;
-    int master_count = 0, stack_count = 0;
+    bool main_needs_init = false, stack_needs_init = false;
+    int main_count = 0, stack_count = 0;
 
     for (int i = 0; i < node->window_count; i++) {
-        if (node->window_regions[i] == REGION_MASTER) {
-            master_count++;
-            if (node->window_ratios[i] < 0.01f) master_needs_init = true;
+        if (node->window_regions[i] == REGION_MAIN) {
+            main_count++;
+            if (node->window_ratios[i] < 0.01f) main_needs_init = true;
         } else {
             stack_count++;
             if (node->window_ratios[i] < 0.01f) stack_needs_init = true;
@@ -1088,35 +1088,35 @@ void view_flush_main_stack(struct view *view)
     }
 
     // Reinitialize ratios for regions that need it
-    if (master_needs_init || stack_needs_init) {
-        debug("Reinitializing ratios: master=%d, stack=%d\n",
-              master_needs_init, stack_needs_init);
+    if (main_needs_init || stack_needs_init) {
+        debug("Reinitializing ratios: main=%d, stack=%d\n",
+              main_needs_init, stack_needs_init);
 
         for (int i = 0; i < node->window_count; i++) {
-            if (node->window_regions[i] == REGION_MASTER && master_needs_init) {
-                node->window_ratios[i] = (master_count > 0) ? (1.0f / master_count) : 1.0f;
+            if (node->window_regions[i] == REGION_MAIN && main_needs_init) {
+                node->window_ratios[i] = (main_count > 0) ? (1.0f / main_count) : 1.0f;
             } else if (node->window_regions[i] == REGION_STACK && stack_needs_init) {
                 node->window_ratios[i] = (stack_count > 0) ? (1.0f / stack_count) : 1.0f;
             }
         }
     }
 
-    struct area master_area = {0};
+    struct area main_area = {0};
     struct area stack_left_area = {0};
     struct area stack_right_area = {0};
 
-    area_make_main_stack(view, &node->area, &master_area, &stack_left_area, &stack_right_area, stack_count);
+    area_make_main_stack(view, &node->area, &main_area, &stack_left_area, &stack_right_area, stack_count);
 
-    debug("Areas: parent=(%.0f,%.0f,%.0fx%.0f) master=(%.0f,%.0f,%.0fx%.0f) left=(%.0f,%.0f,%.0fx%.0f) right=(%.0f,%.0f,%.0fx%.0f)\n",
+    debug("Areas: parent=(%.0f,%.0f,%.0fx%.0f) main=(%.0f,%.0f,%.0fx%.0f) left=(%.0f,%.0f,%.0fx%.0f) right=(%.0f,%.0f,%.0fx%.0f)\n",
           node->area.x, node->area.y, node->area.w, node->area.h,
-          master_area.x, master_area.y, master_area.w, master_area.h,
+          main_area.x, main_area.y, main_area.w, main_area.h,
           stack_left_area.x, stack_left_area.y, stack_left_area.w, stack_left_area.h,
           stack_right_area.x, stack_right_area.y, stack_right_area.w, stack_right_area.h);
 
-    uint32_t master_windows[NODE_MAX_WINDOW_COUNT];
+    uint32_t main_windows[NODE_MAX_WINDOW_COUNT];
     uint32_t stack_left_windows[NODE_MAX_WINDOW_COUNT];
     uint32_t stack_right_windows[NODE_MAX_WINDOW_COUNT];
-    float master_ratios[NODE_MAX_WINDOW_COUNT];
+    float main_ratios[NODE_MAX_WINDOW_COUNT];
     float stack_left_ratios[NODE_MAX_WINDOW_COUNT];
     float stack_right_ratios[NODE_MAX_WINDOW_COUNT];
 
@@ -1125,9 +1125,9 @@ void view_flush_main_stack(struct view *view)
     int stack_idx = 0;  // Index within stack windows
 
     for (int i = 0; i < node->window_count; i++) {
-        if (node->window_regions[i] == REGION_MASTER) {
-            master_windows[m_idx] = node->window_list[i];
-            master_ratios[m_idx] = node->window_ratios[i];
+        if (node->window_regions[i] == REGION_MAIN) {
+            main_windows[m_idx] = node->window_list[i];
+            main_ratios[m_idx] = node->window_ratios[i];
             m_idx++;
         } else {
             // Stack window - decide left or right based on variant
@@ -1157,11 +1157,11 @@ void view_flush_main_stack(struct view *view)
         }
     }
 
-    debug("Window distribution: master=%d, left=%d, right=%d\n",
+    debug("Window distribution: main=%d, left=%d, right=%d\n",
           m_idx, sl_idx, sr_idx);
 
     int gap = window_node_get_gap(view);
-    tile_windows_in_region(master_area, master_windows, master_ratios, m_idx, gap, &window_list);
+    tile_windows_in_region(main_area, main_windows, main_ratios, m_idx, gap, &window_list);
     tile_windows_in_region(stack_left_area, stack_left_windows, stack_left_ratios, sl_idx, gap, &window_list);
     tile_windows_in_region(stack_right_area, stack_right_windows, stack_right_ratios, sr_idx, gap, &window_list);
 
@@ -1176,7 +1176,7 @@ void view_flush_main_stack(struct view *view)
     }
 }
 
-void view_promote_window_to_master(struct view *view, uint32_t window_id)
+void view_promote_window_to_main(struct view *view, uint32_t window_id)
 {
     if (view->layout != VIEW_MAIN_STACK) return;
 
@@ -1193,58 +1193,58 @@ void view_promote_window_to_master(struct view *view, uint32_t window_id)
 
     if (window_idx == -1) return;
 
-    // If already in master region, do nothing
-    if (node->window_regions[window_idx] == REGION_MASTER) return;
+    // If already in main region, do nothing
+    if (node->window_regions[window_idx] == REGION_MAIN) return;
 
-    // Find the first master window to swap with
-    int first_master_idx = -1;
+    // Find the first main window to swap with
+    int first_main_idx = -1;
     for (int i = 0; i < node->window_count; i++) {
-        if (node->window_regions[i] == REGION_MASTER) {
-            first_master_idx = i;
+        if (node->window_regions[i] == REGION_MAIN) {
+            first_main_idx = i;
             break;
         }
     }
 
-    if (first_master_idx == -1) return;
+    if (first_main_idx == -1) return;
 
     // Swap the windows
-    uint32_t temp_id = node->window_list[first_master_idx];
-    node->window_list[first_master_idx] = node->window_list[window_idx];
+    uint32_t temp_id = node->window_list[first_main_idx];
+    node->window_list[first_main_idx] = node->window_list[window_idx];
     node->window_list[window_idx] = temp_id;
 
-    uint8_t temp_region = node->window_regions[first_master_idx];
-    node->window_regions[first_master_idx] = node->window_regions[window_idx];
+    uint8_t temp_region = node->window_regions[first_main_idx];
+    node->window_regions[first_main_idx] = node->window_regions[window_idx];
     node->window_regions[window_idx] = temp_region;
 
     view_flush(view);
 }
 
-void view_swap_master_and_stack(struct view *view)
+void view_swap_main_and_stack(struct view *view)
 {
     if (view->layout != VIEW_MAIN_STACK) return;
 
     struct window_node *node = view->root;
 
-    // Find first master and first stack window
-    int first_master = -1, first_stack = -1;
+    // Find first main and first stack window
+    int first_main = -1, first_stack = -1;
     for (int i = 0; i < node->window_count; i++) {
-        if (node->window_regions[i] == REGION_MASTER && first_master == -1) {
-            first_master = i;
-        } else if (node->window_regions[i] != REGION_MASTER && first_stack == -1) {
+        if (node->window_regions[i] == REGION_MAIN && first_main == -1) {
+            first_main = i;
+        } else if (node->window_regions[i] != REGION_MAIN && first_stack == -1) {
             first_stack = i;
         }
-        if (first_master != -1 && first_stack != -1) break;
+        if (first_main != -1 && first_stack != -1) break;
     }
 
-    if (first_master == -1 || first_stack == -1) return;
+    if (first_main == -1 || first_stack == -1) return;
 
     // Swap them
-    uint32_t temp_id = node->window_list[first_master];
-    node->window_list[first_master] = node->window_list[first_stack];
+    uint32_t temp_id = node->window_list[first_main];
+    node->window_list[first_main] = node->window_list[first_stack];
     node->window_list[first_stack] = temp_id;
 
-    uint8_t temp_region = node->window_regions[first_master];
-    node->window_regions[first_master] = node->window_regions[first_stack];
+    uint8_t temp_region = node->window_regions[first_main];
+    node->window_regions[first_main] = node->window_regions[first_stack];
     node->window_regions[first_stack] = temp_region;
 
     view_flush(view);

@@ -1163,6 +1163,20 @@ void space_manager_set_main_variant_for_space(struct space_manager *sm, uint64_t
     view_flush(view);
 }
 
+void space_manager_set_main_variant_for_all_spaces(struct space_manager *sm, enum main_layout_variant variant)
+{
+    sm->main_variant = variant;
+    table_for (struct view *view, sm->view, {
+        if (!view_check_flag(view, VIEW_MAIN_VARIANT)) {
+            if (space_is_user(view->sid) && view->layout == VIEW_MAIN_STACK) {
+                view->main_variant = variant;
+                view_update(view);
+                view_flush(view);
+            }
+        }
+    })
+}
+
 void space_manager_set_main_nmaster_for_space(struct space_manager *sm, uint64_t sid, int nmaster)
 {
     struct view *view = space_manager_find_view(sm, sid);

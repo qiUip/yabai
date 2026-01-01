@@ -49,6 +49,7 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_MAIN_NMASTER          "main_nmaster"
 #define COMMAND_CONFIG_MAIN_RATIO            "main_ratio"
 #define COMMAND_CONFIG_MAIN_STACK_MAX        "main_stack_max"
+#define COMMAND_CONFIG_MAIN_VARIANT          "main_variant"
 #define COMMAND_CONFIG_MOUSE_MOD             "mouse_modifier"
 #define COMMAND_CONFIG_MOUSE_ACTION1         "mouse_action1"
 #define COMMAND_CONFIG_MOUSE_ACTION2         "mouse_action2"
@@ -132,6 +133,7 @@ extern bool g_verbose;
 #define COMMAND_SPACE_MAIN_NMASTER  "--main-nmaster"
 #define COMMAND_SPACE_MAIN_RATIO    "--main-ratio"
 #define COMMAND_SPACE_MAIN_STACK_MAX "--main-stack-max"
+#define COMMAND_SPACE_MAIN_VARIANT  "--main-variant"
 /* ----------------------------------------------------------------------------- */
 
 /* --------------------------------DOMAIN WINDOW-------------------------------- */
@@ -144,7 +146,7 @@ extern bool g_verbose;
 #define COMMAND_WINDOW_SWAP       "--swap"
 #define COMMAND_WINDOW_WARP       "--warp"
 #define COMMAND_WINDOW_PROMOTE    "--promote"
-#define COMMAND_WINDOW_SWAP_MASTER_STACK "--swap-master-stack"
+#define COMMAND_WINDOW_SWAP_MAIN_STACK "--swap-main-stack"
 #define COMMAND_WINDOW_STACK      "--stack"
 #define COMMAND_WINDOW_INSERT     "--insert"
 #define COMMAND_WINDOW_GRID       "--grid"
@@ -242,6 +244,8 @@ extern bool g_verbose;
 /* ----------------------------------------------------------------------------- */
 
 /* --------------------------------COMMON ARGUMENTS----------------------------- */
+#define ARGUMENT_MAIN_VARIANT_TWO_COLUMN "main-stack"
+#define ARGUMENT_MAIN_VARIANT_THREE_COLUMN "main-center"
 #define ARGUMENT_COMMON_VAL_ON           "on"
 #define ARGUMENT_COMMON_VAL_OFF          "off"
 #define ARGUMENT_COMMON_SEL_PREV         "prev"
@@ -1699,6 +1703,34 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                     daemon_fail(rsp, "value for '%.*s' must be between 1 and 32.\n", command.length, command.text);
                 }
             }
+        } else if (token_equals(command, COMMAND_CONFIG_MAIN_VARIANT)) {
+            struct token value = get_token(&message);
+            if (sel_sid) {
+                struct view *view = space_manager_find_view(&g_space_manager, sel_sid);
+                if (!token_is_valid(value)) {
+                    fprintf(rsp, "%s\n", main_layout_variant_str[view->main_variant]);
+                } else if (token_equals(value, ARGUMENT_MAIN_VARIANT_TWO_COLUMN)) {
+                    view_set_flag(view, VIEW_MAIN_VARIANT);
+                    view->main_variant = MAIN_VARIANT_TWO_COLUMN;
+                    view_flush(view);
+                } else if (token_equals(value, ARGUMENT_MAIN_VARIANT_THREE_COLUMN)) {
+                    view_set_flag(view, VIEW_MAIN_VARIANT);
+                    view->main_variant = MAIN_VARIANT_THREE_COLUMN;
+                    view_flush(view);
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be 'main-stack' or 'main-center'.\n", command.length, command.text);
+                }
+            } else {
+                if (!token_is_valid(value)) {
+                    fprintf(rsp, "%s\n", main_layout_variant_str[g_space_manager.main_variant]);
+                } else if (token_equals(value, ARGUMENT_MAIN_VARIANT_TWO_COLUMN)) {
+                    space_manager_set_main_variant_for_all_spaces(&g_space_manager, MAIN_VARIANT_TWO_COLUMN);
+                } else if (token_equals(value, ARGUMENT_MAIN_VARIANT_THREE_COLUMN)) {
+                    space_manager_set_main_variant_for_all_spaces(&g_space_manager, MAIN_VARIANT_THREE_COLUMN);
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be 'main-stack' or 'main-center'.\n", command.length, command.text);
+                }
+            }
         } else if (token_equals(command, COMMAND_CONFIG_MOUSE_MOD)) {
             struct token value = get_token(&message);
             if (!token_is_valid(value)) {
@@ -2174,6 +2206,24 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
             } else {
                 space_manager_set_main_stack_max_for_space(&g_space_manager, acting_sid, max);
             }
+        } else if (token_equals(command, COMMAND_SPACE_MAIN_VARIANT)) {
+            struct token value = get_token(&message);
+            if (space_is_user(acting_sid)) {
+                struct view *view = space_manager_find_view(&g_space_manager, acting_sid);
+                if (token_equals(value, ARGUMENT_MAIN_VARIANT_TWO_COLUMN)) {
+                    view_set_flag(view, VIEW_MAIN_VARIANT);
+                    view->main_variant = MAIN_VARIANT_TWO_COLUMN;
+                    view_flush(view);
+                } else if (token_equals(value, ARGUMENT_MAIN_VARIANT_THREE_COLUMN)) {
+                    view_set_flag(view, VIEW_MAIN_VARIANT);
+                    view->main_variant = MAIN_VARIANT_THREE_COLUMN;
+                    view_flush(view);
+                } else {
+                    daemon_fail(rsp, "value for '%.*s' must be 'main-stack' or 'main-center'.\n", command.length, command.text);
+                }
+            } else {
+                daemon_fail(rsp, "cannot set main variant for a macOS fullscreen space!\n");
+            }
         } else {
             daemon_fail(rsp, "unknown command '%.*s' for domain '%.*s'\n", command.length, command.text, domain.length, domain.text);
         }
@@ -2332,15 +2382,15 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
             uint64_t sid = window_space(acting_window->id);
             struct view *view = space_manager_find_view(&g_space_manager, sid);
             if (view && view->layout == VIEW_MAIN_STACK) {
-                view_promote_window_to_master(view, acting_window->id);
+                view_promote_window_to_main(view, acting_window->id);
             } else {
                 daemon_fail(rsp, "the acting window is not within a main-stack space.\n");
             }
-        } else if (token_equals(command, COMMAND_WINDOW_SWAP_MASTER_STACK)) {
+        } else if (token_equals(command, COMMAND_WINDOW_SWAP_MAIN_STACK)) {
             uint64_t sid = window_space(acting_window->id);
             struct view *view = space_manager_find_view(&g_space_manager, sid);
             if (view && view->layout == VIEW_MAIN_STACK) {
-                view_swap_master_and_stack(view);
+                view_swap_main_and_stack(view);
             } else {
                 daemon_fail(rsp, "the acting window is not within a main-stack space.\n");
             }

@@ -393,12 +393,12 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
             // Horizontal resizing: adjust main_ratio
             if (direction & (HANDLE_LEFT | HANDLE_RIGHT)) {
-                // Determine which edge touches the master divider and if we're left of master
+                // Determine which edge touches the main divider and if we're left of main
                 bool should_process = false;
-                bool is_left_of_master = false;
+                bool is_left_of_main = false;
 
-                if (window_region == REGION_MASTER) {
-                    // Master window - only process right edge to avoid duplicate
+                if (window_region == REGION_MAIN) {
+                    // Main window - only process right edge to avoid duplicate
                     // (left edge in three-column is handled by left stack)
                     should_process = (direction & HANDLE_RIGHT);
                 } else {
@@ -416,9 +416,9 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                             // Right stack
                             should_process = (direction & HANDLE_LEFT);
                         } else {
-                            // Left stack - we're left of master
+                            // Left stack - we're left of main
                             should_process = (direction & HANDLE_RIGHT);
-                            is_left_of_master = true;
+                            is_left_of_main = true;
                         }
                     }
                 }
@@ -428,9 +428,9 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 }
 
                 // dx is positive for right movement, negative for left
-                // If we're left of master, reverse the effect (growing left shrinks master)
+                // If we're left of main, reverse the effect (growing left shrinks main)
                 float ratio_delta = dx / node->area.w;
-                if (is_left_of_master) {
+                if (is_left_of_main) {
                     ratio_delta = -ratio_delta;
                 }
 
@@ -1282,6 +1282,11 @@ struct window *window_manager_find_first_managed_window(struct space_manager *sm
     struct window_node *first = window_node_find_first_leaf(view->root);
     if (!first) return NULL;
 
+    // For main-stack layout, use window_list instead of window_order
+    if (view->layout == VIEW_MAIN_STACK && first->window_count > 0) {
+        return window_manager_find_window(wm, first->window_list[0]);
+    }
+
     return window_manager_find_window(wm, first->window_order[0]);
 }
 
@@ -1292,6 +1297,11 @@ struct window *window_manager_find_last_managed_window(struct space_manager *sm,
 
     struct window_node *last = window_node_find_last_leaf(view->root);
     if (!last) return NULL;
+
+    // For main-stack layout, use window_list instead of window_order
+    if (view->layout == VIEW_MAIN_STACK && last->window_count > 0) {
+        return window_manager_find_window(wm, last->window_list[last->window_count - 1]);
+    }
 
     return window_manager_find_window(wm, last->window_order[0]);
 }
@@ -2321,6 +2331,11 @@ enum window_op_error window_manager_swap_window(struct space_manager *sm, struct
             window_manager_focus_window_with_raise(&b->application->psn, b->id, b->ref);
         } else if (b->id == wm->focused_window_id) {
             window_manager_focus_window_with_raise(&a->application->psn, a->id, a->ref);
+        }
+
+        // For main-stack layout, flush the view to update window positions
+        if (a_view->layout == VIEW_MAIN_STACK) {
+            view_flush(a_view);
         }
 
         return WINDOW_OP_ERROR_SUCCESS;

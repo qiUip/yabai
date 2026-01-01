@@ -198,7 +198,7 @@ static const char *main_layout_variant_str[] =
     "main-center"
 };
 
-#define REGION_MASTER 0
+#define REGION_MAIN 0
 #define REGION_STACK 1
 
 enum view_flag
@@ -268,8 +268,8 @@ struct window_node *view_add_window_node(struct view *view, struct window *windo
 struct window_node *view_remove_window_node(struct view *view, struct window *window);
 uint32_t *view_find_window_list(struct view *view, int *window_count);
 
-void view_promote_window_to_master(struct view *view, uint32_t window_id);
-void view_swap_master_and_stack(struct view *view);
+void view_promote_window_to_main(struct view *view, uint32_t window_id);
+void view_swap_main_and_stack(struct view *view);
 
 void view_serialize(FILE *rsp, struct view *view, uint64_t flags);
 bool view_is_invalid(struct view *view);
