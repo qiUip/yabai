@@ -1127,7 +1127,7 @@ void space_manager_begin(struct space_manager *sm)
     sm->window_zoom_persist = true;
     sm->labels = NULL;
     sm->main_variant = MAIN_VARIANT_TWO_COLUMN;
-    sm->main_nmaster = 1;
+    sm->main_nmain = 1;
     sm->main_stack_max = 9;
     sm->main_ratio = 5.0f / 12.0f;  // 5/12 ≈ 0.41667
     table_init(&sm->view, 23, hash_view, compare_view);
@@ -1177,13 +1177,13 @@ void space_manager_set_main_variant_for_all_spaces(struct space_manager *sm, enu
     })
 }
 
-void space_manager_set_main_nmaster_for_space(struct space_manager *sm, uint64_t sid, int nmaster)
+void space_manager_set_main_nmain_for_space(struct space_manager *sm, uint64_t sid, int nmain)
 {
     struct view *view = space_manager_find_view(sm, sid);
     if (view->layout != VIEW_MAIN_STACK) return;
 
-    view_set_flag(view, VIEW_MAIN_NMASTER);
-    view->main_nmaster = nmaster < 1 ? 1 : (nmaster > 4 ? 4 : nmaster);
+    view_set_flag(view, VIEW_MAIN_NMAIN);
+    view->main_nmain = nmain < 1 ? 1 : (nmain > 4 ? 4 : nmain);
     view_update(view);
     view_flush(view);
 }

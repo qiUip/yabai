@@ -27,7 +27,7 @@ struct space_manager
     uint32_t auto_balance;
     struct space_label *labels;
     enum main_layout_variant main_variant;
-    uint8_t main_nmaster;
+    uint8_t main_nmain;
     uint8_t main_stack_max;
     float main_ratio;
 };
@@ -91,7 +91,7 @@ bool space_manager_set_padding_for_space(struct space_manager *sm, uint64_t sid,
 bool space_manager_toggle_padding_for_space(struct space_manager *sm, uint64_t sid);
 void space_manager_set_main_variant_for_space(struct space_manager *sm, uint64_t sid, enum main_layout_variant variant);
 void space_manager_set_main_variant_for_all_spaces(struct space_manager *sm, enum main_layout_variant variant);
-void space_manager_set_main_nmaster_for_space(struct space_manager *sm, uint64_t sid, int nmaster);
+void space_manager_set_main_nmain_for_space(struct space_manager *sm, uint64_t sid, int nmain);
 void space_manager_set_main_ratio_for_space(struct space_manager *sm, uint64_t sid, float ratio);
 void space_manager_set_main_stack_max_for_space(struct space_manager *sm, uint64_t sid, int max);
 bool space_manager_rotate_space(struct space_manager *sm, uint64_t sid, int degrees);

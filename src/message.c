@@ -46,7 +46,7 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_SPLIT_RATIO           "split_ratio"
 #define COMMAND_CONFIG_SPLIT_TYPE            "split_type"
 #define COMMAND_CONFIG_AUTO_BALANCE          "auto_balance"
-#define COMMAND_CONFIG_MAIN_NMASTER          "main_nmaster"
+#define COMMAND_CONFIG_MAIN_NMAIN            "main_nmain"
 #define COMMAND_CONFIG_MAIN_RATIO            "main_ratio"
 #define COMMAND_CONFIG_MAIN_STACK_MAX        "main_stack_max"
 #define COMMAND_CONFIG_MAIN_VARIANT          "main_variant"
@@ -130,7 +130,7 @@ extern bool g_verbose;
 #define ARGUMENT_SPACE_LAYOUT_FLT   "float"
 #define ARGUMENT_SPACE_LAYOUT_MAIN_STACK "main-stack"
 #define ARGUMENT_SPACE_LAYOUT_MAIN_CENTER "main-center"
-#define COMMAND_SPACE_MAIN_NMASTER  "--main-nmaster"
+#define COMMAND_SPACE_MAIN_NMAIN    "--main-nmain"
 #define COMMAND_SPACE_MAIN_RATIO    "--main-ratio"
 #define COMMAND_SPACE_MAIN_STACK_MAX "--main-stack-max"
 #define COMMAND_SPACE_MAIN_VARIANT  "--main-variant"
@@ -146,6 +146,7 @@ extern bool g_verbose;
 #define COMMAND_WINDOW_SWAP       "--swap"
 #define COMMAND_WINDOW_WARP       "--warp"
 #define COMMAND_WINDOW_PROMOTE    "--promote"
+#define COMMAND_WINDOW_DEMOTE     "--demote"
 #define COMMAND_WINDOW_SWAP_MAIN_STACK "--swap-main-stack"
 #define COMMAND_WINDOW_STACK      "--stack"
 #define COMMAND_WINDOW_INSERT     "--insert"
@@ -1643,22 +1644,22 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                     daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
                 }
             }
-        } else if (token_equals(command, COMMAND_CONFIG_MAIN_NMASTER)) {
+        } else if (token_equals(command, COMMAND_CONFIG_MAIN_NMAIN)) {
             struct token_value value = token_to_value(get_token(&message));
             if (sel_sid) {
                 struct view *view = space_manager_find_view(&g_space_manager, sel_sid);
                 if (value.type == TOKEN_TYPE_INVALID) {
-                    fprintf(rsp, "%d\n", view->main_nmaster);
+                    fprintf(rsp, "%d\n", view->main_nmain);
                 } else if (value.type == TOKEN_TYPE_INT && in_range_ii(value.int_value, 1, 4)) {
-                    space_manager_set_main_nmaster_for_space(&g_space_manager, sel_sid, value.int_value);
+                    space_manager_set_main_nmain_for_space(&g_space_manager, sel_sid, value.int_value);
                 } else {
                     daemon_fail(rsp, "value for '%.*s' must be between 1 and 4.\n", command.length, command.text);
                 }
             } else {
                 if (value.type == TOKEN_TYPE_INVALID) {
-                    fprintf(rsp, "%d\n", g_space_manager.main_nmaster);
+                    fprintf(rsp, "%d\n", g_space_manager.main_nmain);
                 } else if (value.type == TOKEN_TYPE_INT && in_range_ii(value.int_value, 1, 4)) {
-                    g_space_manager.main_nmaster = value.int_value;
+                    g_space_manager.main_nmain = value.int_value;
                 } else {
                     daemon_fail(rsp, "value for '%.*s' must be between 1 and 4.\n", command.length, command.text);
                 }
@@ -2182,13 +2183,13 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                     }
                 }
             }
-        } else if (token_equals(command, COMMAND_SPACE_MAIN_NMASTER)) {
+        } else if (token_equals(command, COMMAND_SPACE_MAIN_NMAIN)) {
             struct token value = get_token(&message);
-            int nmaster = atoi(value.text);
-            if (nmaster < 1 || nmaster > 4) {
+            int nmain = atoi(value.text);
+            if (nmain < 1 || nmain > 4) {
                 daemon_fail(rsp, "value for '%.*s' must be between 1 and 4.\n", command.length, command.text);
             } else {
-                space_manager_set_main_nmaster_for_space(&g_space_manager, acting_sid, nmaster);
+                space_manager_set_main_nmain_for_space(&g_space_manager, acting_sid, nmain);
             }
         } else if (token_equals(command, COMMAND_SPACE_MAIN_RATIO)) {
             struct token value = get_token(&message);
@@ -2382,7 +2383,23 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
             uint64_t sid = window_space(acting_window->id);
             struct view *view = space_manager_find_view(&g_space_manager, sid);
             if (view && view->layout == VIEW_MAIN_STACK) {
-                view_promote_window_to_main(view, acting_window->id);
+                if (view->main_nmain >= 4) {
+                    daemon_fail(rsp, "cannot promote window, already at maximum of 4 main windows.\n");
+                } else if (!view_promote_window_to_main(view, acting_window->id)) {
+                    daemon_fail(rsp, "the acting window is already in the main region.\n");
+                }
+            } else {
+                daemon_fail(rsp, "the acting window is not within a main-stack space.\n");
+            }
+        } else if (token_equals(command, COMMAND_WINDOW_DEMOTE)) {
+            uint64_t sid = window_space(acting_window->id);
+            struct view *view = space_manager_find_view(&g_space_manager, sid);
+            if (view && view->layout == VIEW_MAIN_STACK) {
+                if (view->main_nmain <= 1) {
+                    daemon_fail(rsp, "cannot demote window, must have at least 1 main window.\n");
+                } else if (!view_demote_window_from_main(view, acting_window->id)) {
+                    daemon_fail(rsp, "the acting window is already in the stack region.\n");
+                }
             } else {
                 daemon_fail(rsp, "the acting window is not within a main-stack space.\n");
             }

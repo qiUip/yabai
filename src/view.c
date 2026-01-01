@@ -267,10 +267,10 @@ static void area_make_main_stack(struct view *view, struct area *parent, struct 
 
 static void assign_regions_to_windows(struct view *view, struct window_node *node)
 {
-    int nmaster = view->main_nmaster;
-    int main_end = (node->window_count < nmaster) ? node->window_count : nmaster;
+    int nmain = view->main_nmain;
+    int main_end = (node->window_count < nmain) ? node->window_count : nmain;
 
-    // Assign regions: main (0..nmaster-1) and stack (nmaster..count-1)
+    // Assign regions: main (0..nmain-1) and stack (nmain..count-1)
     for (int i = 0; i < node->window_count; i++) {
         if (i < main_end) {
             node->window_regions[i] = REGION_MAIN;
@@ -1009,7 +1009,7 @@ struct window_node *view_add_window_node_with_insertion_point(struct view *view,
         memmove(view->root->window_order + 1, view->root->window_order, sizeof(uint32_t) * view->root->window_count);
         view->root->window_order[0] = window->id;
 
-        if (main_count < view->main_nmaster) {
+        if (main_count < view->main_nmain) {
             view->root->window_regions[idx] = REGION_MAIN;
         } else {
             view->root->window_regions[idx] = REGION_STACK;
@@ -1070,7 +1070,7 @@ void view_flush_main_stack(struct view *view)
     debug("view_flush_main_stack: window_count=%d, variant=%s\n",
           node->window_count, main_layout_variant_str[view->main_variant]);
 
-    // Always assign regions (in case nmaster or variant changed)
+    // Always assign regions (in case nmain or variant changed)
     assign_regions_to_windows(view, node);
 
     // Check each region - if any window in a region has ratio 0, reinitialize that region only
@@ -1176,9 +1176,9 @@ void view_flush_main_stack(struct view *view)
     }
 }
 
-void view_promote_window_to_main(struct view *view, uint32_t window_id)
+bool view_promote_window_to_main(struct view *view, uint32_t window_id)
 {
-    if (view->layout != VIEW_MAIN_STACK) return;
+    if (view->layout != VIEW_MAIN_STACK) return false;
 
     struct window_node *node = view->root;
     int window_idx = -1;
@@ -1191,32 +1191,47 @@ void view_promote_window_to_main(struct view *view, uint32_t window_id)
         }
     }
 
-    if (window_idx == -1) return;
+    if (window_idx == -1) return false;
 
-    // If already in main region, do nothing
-    if (node->window_regions[window_idx] == REGION_MAIN) return;
+    // If already in main region, return false (already promoted)
+    if (node->window_regions[window_idx] == REGION_MAIN) return false;
 
-    // Find the first main window to swap with
-    int first_main_idx = -1;
+    // Increment main_nmain to add this window to main region
+    view->main_nmain++;
+    view_set_flag(view, VIEW_MAIN_NMAIN);
+
+    view_update(view);
+    view_flush(view);
+    return true;
+}
+
+bool view_demote_window_from_main(struct view *view, uint32_t window_id)
+{
+    if (view->layout != VIEW_MAIN_STACK) return false;
+
+    struct window_node *node = view->root;
+    int window_idx = -1;
+
+    // Find the window
     for (int i = 0; i < node->window_count; i++) {
-        if (node->window_regions[i] == REGION_MAIN) {
-            first_main_idx = i;
+        if (node->window_list[i] == window_id) {
+            window_idx = i;
             break;
         }
     }
 
-    if (first_main_idx == -1) return;
+    if (window_idx == -1) return false;
 
-    // Swap the windows
-    uint32_t temp_id = node->window_list[first_main_idx];
-    node->window_list[first_main_idx] = node->window_list[window_idx];
-    node->window_list[window_idx] = temp_id;
+    // If already in stack region, return false (already demoted)
+    if (node->window_regions[window_idx] == REGION_STACK) return false;
 
-    uint8_t temp_region = node->window_regions[first_main_idx];
-    node->window_regions[first_main_idx] = node->window_regions[window_idx];
-    node->window_regions[window_idx] = temp_region;
+    // Decrement main_nmain to move this window to stack region
+    view->main_nmain--;
+    view_set_flag(view, VIEW_MAIN_NMAIN);
 
+    view_update(view);
     view_flush(view);
+    return true;
 }
 
 void view_swap_main_and_stack(struct view *view)
@@ -1378,7 +1393,7 @@ void view_serialize(FILE *rsp, struct view *view, uint64_t flags)
         if (did_output) fprintf(rsp, ",\n");
 
         fprintf(rsp, "\t\"main-variant\":\"%s\"", main_layout_variant_str[view->main_variant]);
-        fprintf(rsp, ",\n\t\"main-nmaster\":%d", view->main_nmaster);
+        fprintf(rsp, ",\n\t\"main-nmain\":%d", view->main_nmain);
         fprintf(rsp, ",\n\t\"main-ratio\":%.4f", view->main_ratio);
         fprintf(rsp, ",\n\t\"main-stack-max\":%d", view->main_stack_max);
     }
@@ -1428,7 +1443,7 @@ struct view *view_create(uint64_t sid)
         if (!view_check_flag(view, VIEW_AUTO_BALANCE))   view->auto_balance   = g_space_manager.auto_balance;
         if (!view_check_flag(view, VIEW_SPLIT_TYPE))     view->split_type     = g_space_manager.split_type;
         if (!view_check_flag(view, VIEW_MAIN_VARIANT))   view->main_variant   = g_space_manager.main_variant;
-        if (!view_check_flag(view, VIEW_MAIN_NMASTER))   view->main_nmaster   = g_space_manager.main_nmaster;
+        if (!view_check_flag(view, VIEW_MAIN_NMAIN))     view->main_nmain     = g_space_manager.main_nmain;
         if (!view_check_flag(view, VIEW_MAIN_STACK_MAX)) view->main_stack_max = g_space_manager.main_stack_max;
         if (!view_check_flag(view, VIEW_MAIN_RATIO))     view->main_ratio     = g_space_manager.main_ratio;
         view_update(view);

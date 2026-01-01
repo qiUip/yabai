@@ -3,7 +3,7 @@
 TEST_FUNC(main_stack_region_assignment_single_window, {
     struct view view = {0};
     view.layout = VIEW_MAIN_STACK;
-    view.main_nmaster = 1;
+    view.main_nmain = 1;
     view.main_variant = MAIN_VARIANT_TWO_COLUMN;
 
     struct window_node node = {0};
@@ -13,13 +13,13 @@ TEST_FUNC(main_stack_region_assignment_single_window, {
 
     assign_regions_to_windows(&view, &node);
 
-    TEST_CHECK(node.window_regions[0], REGION_MASTER);
+    TEST_CHECK(node.window_regions[0], REGION_MAIN);
 })
 
 TEST_FUNC(main_stack_region_assignment_two_windows, {
     struct view view = {0};
     view.layout = VIEW_MAIN_STACK;
-    view.main_nmaster = 1;
+    view.main_nmain = 1;
     view.main_variant = MAIN_VARIANT_TWO_COLUMN;
 
     struct window_node node = {0};
@@ -30,14 +30,14 @@ TEST_FUNC(main_stack_region_assignment_two_windows, {
 
     assign_regions_to_windows(&view, &node);
 
-    TEST_CHECK(node.window_regions[0], REGION_MASTER);
+    TEST_CHECK(node.window_regions[0], REGION_MAIN);
     TEST_CHECK(node.window_regions[1], REGION_STACK);
 })
 
-TEST_FUNC(main_stack_region_assignment_multiple_masters, {
+TEST_FUNC(main_stack_region_assignment_multiple_mains, {
     struct view view = {0};
     view.layout = VIEW_MAIN_STACK;
-    view.main_nmaster = 2;
+    view.main_nmain = 2;
     view.main_variant = MAIN_VARIANT_TWO_COLUMN;
 
     struct window_node node = {0};
@@ -50,8 +50,8 @@ TEST_FUNC(main_stack_region_assignment_multiple_masters, {
 
     assign_regions_to_windows(&view, &node);
 
-    TEST_CHECK(node.window_regions[0], REGION_MASTER);
-    TEST_CHECK(node.window_regions[1], REGION_MASTER);
+    TEST_CHECK(node.window_regions[0], REGION_MAIN);
+    TEST_CHECK(node.window_regions[1], REGION_MAIN);
     TEST_CHECK(node.window_regions[2], REGION_STACK);
     TEST_CHECK(node.window_regions[3], REGION_STACK);
 })
@@ -75,7 +75,7 @@ TEST_FUNC(main_stack_chunk_distribution_odd_stack, {
 TEST_FUNC(main_stack_ratio_initialization, {
     struct view view = {0};
     view.layout = VIEW_MAIN_STACK;
-    view.main_nmaster = 1;
+    view.main_nmain = 1;
     view.main_variant = MAIN_VARIANT_TWO_COLUMN;
 
     struct window_node node = {0};
@@ -90,8 +90,8 @@ TEST_FUNC(main_stack_ratio_initialization, {
     // Initialize ratios for new windows
     for (int i = 0; i < node.window_count; i++) {
         if (node.window_ratios[i] == 0.0f) {
-            if (node.window_regions[i] == REGION_MASTER) {
-                node.window_ratios[i] = 1.0f;  // 1 master window
+            if (node.window_regions[i] == REGION_MAIN) {
+                node.window_ratios[i] = 1.0f;  // 1 main window
             } else {
                 node.window_ratios[i] = 0.5f;  // 2 stack windows
             }

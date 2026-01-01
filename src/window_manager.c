@@ -557,8 +557,17 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                     return WINDOW_OP_ERROR_INVALID_DST_NODE;
                 }
 
-                // Calculate ratio change
-                float ratio_delta = dy / node->area.h;
+                // Calculate the sum of all ratios in this region group to get the total height allocation
+                float total_region_ratio = 0;
+                for (int i = 0; i < region_count; i++) {
+                    total_region_ratio += node->window_ratios[region_windows[i]];
+                }
+
+                // Calculate ratio change relative to the actual region height
+                // The region occupies (total_region_ratio * node->area.h) pixels
+                // So ratio_delta should be: dy / (total_region_ratio * node->area.h)
+                float region_height = total_region_ratio * node->area.h;
+                float ratio_delta = dy / region_height;
 
                 if (neighbor_idx == -1) return WINDOW_OP_ERROR_INVALID_DST_NODE;
 

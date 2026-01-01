@@ -216,7 +216,7 @@ enum view_flag
     VIEW_IS_DIRTY       = 0x0400,
     VIEW_SPLIT_TYPE     = 0x0800,
     VIEW_MAIN_VARIANT   = 0x1000,
-    VIEW_MAIN_NMASTER   = 0x2000,
+    VIEW_MAIN_NMAIN     = 0x2000,
     VIEW_MAIN_STACK_MAX = 0x4000,
     VIEW_MAIN_RATIO     = 0x8000,
 };
@@ -237,7 +237,7 @@ struct view
     uint32_t auto_balance;
     uint64_t flags;
     enum main_layout_variant main_variant;
-    uint8_t main_nmaster;
+    uint8_t main_nmain;
     uint8_t main_stack_max;
     float main_ratio;
 };
@@ -268,7 +268,8 @@ struct window_node *view_add_window_node(struct view *view, struct window *windo
 struct window_node *view_remove_window_node(struct view *view, struct window *window);
 uint32_t *view_find_window_list(struct view *view, int *window_count);
 
-void view_promote_window_to_main(struct view *view, uint32_t window_id);
+bool view_promote_window_to_main(struct view *view, uint32_t window_id);
+bool view_demote_window_from_main(struct view *view, uint32_t window_id);
 void view_swap_main_and_stack(struct view *view);
 
 void view_serialize(FILE *rsp, struct view *view, uint64_t flags);
