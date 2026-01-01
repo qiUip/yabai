@@ -1000,13 +1000,8 @@ static EVENT_HANDLER(SPACE_CHANGED)
             view_update(view);
         }
 
-        printf("[SPACE_CHANGED] Checking dirty flag for sid=%llu, is_dirty=%d\n",
-               view->sid, view_is_dirty(view));
         if (view_is_dirty(view)) {
-            printf("[SPACE_CHANGED] View is dirty, layout=%s, window_count=%d\n",
-                   view_type_str[view->layout], view->root->window_count);
             if (view->layout == VIEW_MAIN_STACK) {
-                printf("[SPACE_CHANGED] Calling view_flush_main_stack\n");
                 view_flush_main_stack(view);
             } else {
                 window_node_flush(view->root);

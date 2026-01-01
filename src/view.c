@@ -284,11 +284,8 @@ static void assign_regions_to_windows(struct view *view, struct window_node *nod
 static void tile_windows_in_region(struct area region_area, uint32_t *window_ids, float *window_ratios, int count, int gap, struct window_capture **captures)
 {
     if (count == 0) {
-        printf("[TILE-RECURSIVE] count=0, returning\n");
         return;
     }
-
-    printf("[TILE-RECURSIVE] count=%d, region_h=%.0f\n", count, region_area.h);
     debug("tile_windows_in_region: count=%d, area=(%.0f,%.0f,%.0fx%.0f)\n",
           count, region_area.x, region_area.y, region_area.w, region_area.h);
 
@@ -297,8 +294,6 @@ static void tile_windows_in_region(struct area region_area, uint32_t *window_ids
         if (w) {
             debug("  -> window %d at (%.0f,%.0f,%.0fx%.0f)\n",
                   window_ids[0], region_area.x, region_area.y, region_area.w, region_area.h);
-            printf("[TILE] Window %d (LAST): ratio=%.3f, region_h=%.0f, actual_h=%.0f (100.0%% of remaining region)\n",
-                   window_ids[0], window_ratios[0], region_area.h, region_area.h);
             ts_buf_push(*captures, ((struct window_capture) {
                 .window = w,
                 .x = region_area.x,
@@ -323,23 +318,16 @@ static void tile_windows_in_region(struct area region_area, uint32_t *window_ids
     float split_ratio = (sum_of_ratios > 0) ? (window_ratios[0] / sum_of_ratios) : 0.5f;
     float top_height = (region_area.h - gap) * split_ratio;
 
-    printf("[TILE-CALC] sum_of_ratios=%.3f, window_ratio=%.3f, split_ratio=%.3f\n",
-           sum_of_ratios, window_ratios[0], split_ratio);
 
     top_area.h = (int)top_height;
     bottom_area.h = region_area.h - (int)top_height - gap;
     bottom_area.y = region_area.y + (int)top_height + gap;
 
-    printf("[TILE-SPLIT] top_h=%.0f, bottom_h=%.0f, remaining_count=%d\n",
-           top_area.h, bottom_area.h, count - 1);
 
     struct window *w = window_manager_find_window(&g_window_manager, window_ids[0]);
     if (w) {
         debug("  -> window %d at (%.0f,%.0f,%.0fx%.0f)\n",
               window_ids[0], top_area.x, top_area.y, top_area.w, top_area.h);
-        printf("[TILE] Window %d: ratio=%.3f, region_h=%.0f, gap=%d, calculated_h=%.0f, actual_h=%.0f (%.1f%% of region)\n",
-               window_ids[0], split_ratio, region_area.h, gap, top_height, top_area.h,
-               (top_area.h / region_area.h) * 100.0f);
         ts_buf_push(*captures, ((struct window_capture) {
             .window = w,
             .x = top_area.x,
@@ -1028,12 +1016,8 @@ struct window_node *view_add_window_node_with_insertion_point(struct view *view,
         }
 
         view->root->window_count++;
-        printf("[ADD_WINDOW] Before view_update: window_count=%d, sid=%llu, space_visible=%d\n",
-               view->root->window_count, view->sid, space_is_visible(view->sid));
         view_update(view);
-        printf("[ADD_WINDOW] After view_update: is_dirty=%d\n", view_is_dirty(view));
         view_flush(view);
-        printf("[ADD_WINDOW] After view_flush: is_dirty=%d\n", view_is_dirty(view));
         return view->root;
     }
 
@@ -1153,12 +1137,17 @@ void view_flush_main_stack(struct view *view)
                 stack_right_ratios[sr_idx] = node->window_ratios[i];
                 sr_idx++;
             } else if (view->main_variant == MAIN_VARIANT_THREE_COLUMN) {
-                // Even indices (0,2,4...) go right, odd (1,3,5...) go left
-                if (stack_idx % 2 == 0) {
+                // First half of stack goes right, second half goes left
+                // Right gets ceiling(stack_count / 2), left gets floor(stack_count / 2)
+                int right_stack_count = (stack_count + 1) / 2;  // ceiling division
+
+                if (stack_idx < right_stack_count) {
+                    // First half → right stack
                     stack_right_windows[sr_idx] = node->window_list[i];
                     stack_right_ratios[sr_idx] = node->window_ratios[i];
                     sr_idx++;
                 } else {
+                    // Second half → left stack
                     stack_left_windows[sl_idx] = node->window_list[i];
                     stack_left_ratios[sl_idx] = node->window_ratios[i];
                     sl_idx++;

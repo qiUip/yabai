@@ -12,11 +12,19 @@ typedef TEST_SIG(function);
 #define TEST_CHECK(r, e) if ((r) != (e)) { printf("                   \e[1;33m%s\e[m\e[1;31m#%d %s == %s\e[m \e[1;31m(%d == %d)\e[m\n", test_name, __LINE__, #r, #e, r, e); result = false; }
 
 #include "area.c"
+#include "main_stack.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
     TEST_ENTRY(display_area_is_in_direction)                   \
-    TEST_ENTRY(closest_display_in_direction)
+    TEST_ENTRY(closest_display_in_direction)                   \
+    TEST_ENTRY(main_stack_region_assignment_single_window)     \
+    TEST_ENTRY(main_stack_region_assignment_two_windows)       \
+    TEST_ENTRY(main_stack_region_assignment_multiple_masters)  \
+    TEST_ENTRY(main_stack_chunk_distribution_even_stack)       \
+    TEST_ENTRY(main_stack_chunk_distribution_odd_stack)        \
+    TEST_ENTRY(main_stack_ratio_initialization)                \
+    TEST_ENTRY(main_stack_wrap_around_calculation)
 
 static struct {
     char *name;

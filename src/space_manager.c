@@ -1129,7 +1129,7 @@ void space_manager_begin(struct space_manager *sm)
     sm->main_variant = MAIN_VARIANT_TWO_COLUMN;
     sm->main_nmaster = 1;
     sm->main_stack_max = 9;
-    sm->main_ratio = 0.55f;
+    sm->main_ratio = 5.0f / 12.0f;  // 5/12 ≈ 0.41667
     table_init(&sm->view, 23, hash_view, compare_view);
 
     int display_count;

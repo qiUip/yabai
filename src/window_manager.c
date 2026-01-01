@@ -391,9 +391,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
             if (window_idx == -1) return WINDOW_OP_ERROR_INVALID_SRC_NODE;
 
-            printf("[RESIZE] window_id=%d, window_idx=%d, window_region=%d (0=master, 1=stack)\n",
-                   window->id, window_idx, window_region);
-
             // Horizontal resizing: adjust main_ratio
             if (direction & (HANDLE_LEFT | HANDLE_RIGHT)) {
                 // Determine which edge touches the master divider and if we're left of master
@@ -415,8 +412,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                         for (int i = 0; i < window_idx; i++) {
                             if (node->window_regions[i] == REGION_STACK) stack_idx++;
                         }
-                        printf("[RESIZE-H] Stack window: window_idx=%d, stack_idx=%d, %s stack\n",
-                               window_idx, stack_idx, (stack_idx % 2 == 0) ? "RIGHT" : "LEFT");
                         if (stack_idx % 2 == 0) {
                             // Right stack
                             should_process = (direction & HANDLE_LEFT);
@@ -429,8 +424,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 }
 
                 if (!should_process) {
-                    printf("[RESIZE-H] Skipping - wrong edge (direction=%d, variant=%d, region=%d)\n",
-                           direction, view->main_variant, window_region);
                     return WINDOW_OP_ERROR_SUCCESS;
                 }
 
@@ -440,15 +433,12 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 if (is_left_of_master) {
                     ratio_delta = -ratio_delta;
                 }
-                printf("[RESIZE-H] dx=%.1f, ratio_delta=%.4f, is_left_of_master=%d, current_ratio=%.3f\n",
-                       dx, ratio_delta, is_left_of_master, view->main_ratio);
 
                 // ratio_delta already has the correct sign accounting for position
                 float new_ratio = view->main_ratio + ratio_delta;
                 view->main_ratio = clampf_range(new_ratio, 0.1f, 0.9f);
                 view_set_flag(view, VIEW_MAIN_RATIO);
 
-                printf("[RESIZE] Setting main_ratio to %.3f (flag=0x%llx)\n", view->main_ratio, view->flags);
 
                 // For main-stack layout, we don't need view_update (that's for BSP)
                 // Just flush to rerender with the new ratio
@@ -465,29 +455,45 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
                 // For three-column layout with stack windows, filter by physical area (left vs right)
                 bool need_area_filter = (view->main_variant == MAIN_VARIANT_THREE_COLUMN && my_region == REGION_STACK);
-                bool my_is_right_stack = false;
+                bool my_is_left_stack = false;
 
                 if (need_area_filter) {
-                    // Calculate my stack index to determine which physical area I'm in
-                    int stack_idx = 0;
-                    for (int i = 0; i < window_idx; i++) {
-                        if (node->window_regions[i] == REGION_STACK) stack_idx++;
+                    // Count total stack windows
+                    int stack_count = 0;
+                    for (int i = 0; i < node->window_count; i++) {
+                        if (node->window_regions[i] == REGION_STACK) stack_count++;
                     }
-                    my_is_right_stack = (stack_idx % 2 == 0);
+
+                    // First half of stack goes right, second half goes left
+                    int right_stack_count = (stack_count + 1) / 2;  // ceiling division
+
+                    // Calculate my stack index to determine which physical area I'm in
+                    int my_stack_idx = 0;
+                    for (int i = 0; i < window_idx; i++) {
+                        if (node->window_regions[i] == REGION_STACK) my_stack_idx++;
+                    }
+                    my_is_left_stack = (my_stack_idx >= right_stack_count);
                 }
 
                 for (int i = 0; i < node->window_count; i++) {
                     if (node->window_regions[i] == my_region) {
                         if (need_area_filter) {
+                            // Count total stack windows (same as above)
+                            int stack_count = 0;
+                            for (int j = 0; j < node->window_count; j++) {
+                                if (node->window_regions[j] == REGION_STACK) stack_count++;
+                            }
+                            int right_stack_count = (stack_count + 1) / 2;
+
                             // Calculate this window's stack index to see if it's in same physical area
                             int stack_idx = 0;
                             for (int j = 0; j < i; j++) {
                                 if (node->window_regions[j] == REGION_STACK) stack_idx++;
                             }
-                            bool is_right_stack = (stack_idx % 2 == 0);
+                            bool is_left_stack = (stack_idx >= right_stack_count);
 
                             // Only include if in the same physical area (left or right)
-                            if (is_right_stack == my_is_right_stack) {
+                            if (is_left_stack == my_is_left_stack) {
                                 region_windows[region_count++] = i;
                             }
                         } else {
@@ -509,13 +515,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
                 if (my_region_idx == -1) return WINDOW_OP_ERROR_INVALID_DST_NODE;
 
-                // Debug: show what direction flags are set
-                printf("[RESIZE-V] direction=0x%x (TOP=%d, BOTTOM=%d, LEFT=%d, RIGHT=%d)\n",
-                       direction,
-                       !!(direction & HANDLE_TOP),
-                       !!(direction & HANDLE_BOTTOM),
-                       !!(direction & HANDLE_LEFT),
-                       !!(direction & HANDLE_RIGHT));
 
                 // Yabai calls resize multiple times with different direction flags.
                 // To prevent alternating behavior, we need to skip one edge.
@@ -532,7 +531,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
                 // Skip TOP edge for non-bottom windows to prevent alternation
                 if (!is_bottom_window && (direction & HANDLE_TOP)) {
-                    printf("[RESIZE-V] Skipping TOP edge for non-bottom window\n");
                     return WINDOW_OP_ERROR_SUCCESS;
                 }
 
@@ -542,7 +540,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 if (direction & HANDLE_BOTTOM) {
                     // HANDLE_BOTTOM: resize with window below
                     if (my_region_idx < region_count - 1) {
-                        printf("[RESIZE-V] Using BOTTOM edge\n");
                         is_bottom_edge = true;
                         neighbor_idx = region_windows[my_region_idx + 1];
                     } else {
@@ -551,7 +548,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 } else if (direction & HANDLE_TOP) {
                     // HANDLE_TOP: resize with window above (bottom window only reaches here)
                     if (my_region_idx > 0) {
-                        printf("[RESIZE-V] Using TOP edge (bottom window)\n");
                         is_bottom_edge = false;
                         neighbor_idx = region_windows[my_region_idx - 1];
                     } else {
@@ -587,37 +583,18 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 float new_my_ratio = clampf_range(desired_my_ratio, min_ratio, max_ratio);
                 float new_neighbor_ratio = combined_ratio - new_my_ratio;
 
-                printf("[RESIZE-V] Clamping: desired_my=%.3f, new_my=%.3f, new_neighbor=%.3f, combined=%.3f\n",
-                       desired_my_ratio, new_my_ratio, new_neighbor_ratio, combined_ratio);
-
                 // If neighbor is now out of bounds, clamp it and adjust mine back
                 if (new_neighbor_ratio < min_ratio) {
-                    printf("[RESIZE-V] Neighbor %.3f below min %.3f, clamping\n", new_neighbor_ratio, min_ratio);
                     new_neighbor_ratio = min_ratio;
                     new_my_ratio = combined_ratio - new_neighbor_ratio;
                 } else if (new_neighbor_ratio > max_ratio) {
-                    printf("[RESIZE-V] Neighbor %.3f above max %.3f, clamping\n", new_neighbor_ratio, max_ratio);
                     new_neighbor_ratio = max_ratio;
                     new_my_ratio = combined_ratio - new_neighbor_ratio;
                 }
 
-                // Debug: print all ratios before change
-                printf("[RESIZE-V] dy=%.1f (%s edge), Before: ", dy, is_bottom_edge ? "BOTTOM" : "TOP");
-                for (int i = 0; i < region_count; i++) {
-                    printf("w%d=%.3f ", region_windows[i], node->window_ratios[region_windows[i]]);
-                }
-                printf("\n");
-
                 // Apply the new ratios (only these two windows change, sum is preserved)
                 node->window_ratios[window_idx] = new_my_ratio;
                 node->window_ratios[neighbor_idx] = new_neighbor_ratio;
-
-                // Debug: print all ratios after change
-                printf("[RESIZE-V] After:  ");
-                for (int i = 0; i < region_count; i++) {
-                    printf("w%d=%.3f ", region_windows[i], node->window_ratios[region_windows[i]]);
-                }
-                printf("(changed w%d and w%d)\n", window_idx, neighbor_idx);
 
                 // For main-stack layout, we don't need view_update (that's for BSP)
                 view_flush(view);

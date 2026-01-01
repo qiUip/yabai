@@ -201,7 +201,14 @@ void mouse_drop_action_warp(struct window_manager *wm, struct view *src_view, st
 void mouse_drop_no_target(struct space_manager *sm, struct window_manager *wm, struct view *src_view, struct view *dst_view, struct window *window, struct window_node *node)
 {
     if (src_view->sid == dst_view->sid) {
-        window_node_flush(node);
+        // For main-stack, make dragged windows floating instead of re-tiling
+        if (src_view->layout == VIEW_MAIN_STACK) {
+            space_manager_untile_window(src_view, window);
+            window_manager_remove_managed_window(wm, window->id);
+            window_manager_purify_window(wm, window);
+        } else {
+            window_node_flush(node);
+        }
     } else {
         space_manager_untile_window(src_view, window);
         window_manager_remove_managed_window(wm, window->id);
@@ -216,9 +223,17 @@ void mouse_drop_try_adjust_bsp_grid(struct window_manager *wm, struct view *view
 {
     bool success = true;
 
-    if (view->layout != VIEW_BSP) {
+    if (view->layout != VIEW_BSP && view->layout != VIEW_MAIN_STACK) {
         success = false;
         goto end;
+    }
+
+    // For main-stack, make moved windows floating instead of adjusting grid
+    if (view->layout == VIEW_MAIN_STACK && info->changed_position) {
+        space_manager_untile_window(view, window);
+        window_manager_remove_managed_window(wm, window->id);
+        window_manager_purify_window(wm, window);
+        return;
     }
 
     if (info->changed_position) {
@@ -241,8 +256,12 @@ void mouse_drop_try_adjust_bsp_grid(struct window_manager *wm, struct view *view
 
 end:
     if (!success) {
-        struct window_node *node = view_find_window_node(view, window->id);
-        if (node) window_node_flush(node);
+        if (view->layout == VIEW_MAIN_STACK) {
+            view_flush(view);
+        } else {
+            struct window_node *node = view_find_window_node(view, window->id);
+            if (node) window_node_flush(node);
+        }
     }
 }
 
