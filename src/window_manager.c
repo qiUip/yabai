@@ -2129,7 +2129,7 @@ enum window_op_error window_manager_warp_window(struct space_manager *sm, struct
     //
     if (a_view->layout == VIEW_MAIN_STACK && b_view->layout == VIEW_MAIN_STACK) {
         if (a_view->sid == b_view->sid) {
-            // Same space: swap positions in the flat list
+            // Same space: rotate window position (not swap)
             int a_idx = -1, b_idx = -1;
 
             for (int i = 0; i < a_node->window_count; i++) {
@@ -2137,15 +2137,28 @@ enum window_op_error window_manager_warp_window(struct space_manager *sm, struct
                 if (a_node->window_list[i] == b->id) b_idx = i;
             }
 
-            if (a_idx != -1 && b_idx != -1) {
-                // Swap window IDs
+            if (a_idx != -1 && b_idx != -1 && a_idx != b_idx) {
+                // Save window A's data
                 uint32_t temp_id = a_node->window_list[a_idx];
-                a_node->window_list[a_idx] = a_node->window_list[b_idx];
-                a_node->window_list[b_idx] = temp_id;
-
-                // Swap regions
                 uint8_t temp_region = a_node->window_regions[a_idx];
-                a_node->window_regions[a_idx] = a_node->window_regions[b_idx];
+
+                // Rotate windows between a_idx and b_idx
+                if (a_idx < b_idx) {
+                    // Moving forward: shift windows left
+                    for (int i = a_idx; i < b_idx; i++) {
+                        a_node->window_list[i] = a_node->window_list[i + 1];
+                        a_node->window_regions[i] = a_node->window_regions[i + 1];
+                    }
+                } else {
+                    // Moving backward: shift windows right
+                    for (int i = a_idx; i > b_idx; i--) {
+                        a_node->window_list[i] = a_node->window_list[i - 1];
+                        a_node->window_regions[i] = a_node->window_regions[i - 1];
+                    }
+                }
+
+                // Insert window A at new position
+                a_node->window_list[b_idx] = temp_id;
                 a_node->window_regions[b_idx] = temp_region;
 
                 view_flush(a_view);
