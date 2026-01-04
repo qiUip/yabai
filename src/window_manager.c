@@ -557,22 +557,24 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                     return WINDOW_OP_ERROR_INVALID_DST_NODE;
                 }
 
-                // Calculate the sum of all ratios in this region group to get the total height allocation
+                // Calculate the sum of all ratios in this region group
                 float total_region_ratio = 0;
                 for (int i = 0; i < region_count; i++) {
                     total_region_ratio += node->window_ratios[region_windows[i]];
                 }
 
-                // Calculate ratio change relative to the actual region height
-                // The region occupies (total_region_ratio * node->area.h) pixels
-                // So ratio_delta should be: dy / (total_region_ratio * node->area.h)
-                float region_height = total_region_ratio * node->area.h;
-                float ratio_delta = dy / region_height;
+                // Calculate ratio change to achieve dy pixel change
+                // Windows are renormalized when tiled: pixel_height = (ratio / total_region_ratio) * region_height
+                // To change pixel height by dy: dy = (delta_ratio / total_region_ratio) * region_height
+                // Therefore: delta_ratio = dy * total_region_ratio / region_height
+                float ratio_delta = dy * total_region_ratio / node->area.h;
 
                 if (neighbor_idx == -1) return WINDOW_OP_ERROR_INVALID_DST_NODE;
 
-                float min_ratio = 0.05f;
-                float max_ratio = 0.95f;
+                // Min/max ratios must be scaled by total_region_ratio since raw ratios aren't normalized
+                // For 2 windows, ratios sum to 2.0, so min/max should be 0.1 and 1.9 (not 0.05 and 0.95)
+                float min_ratio = 0.05f * total_region_ratio;
+                float max_ratio = 0.95f * total_region_ratio;
 
                 float old_my_ratio = node->window_ratios[window_idx];
                 float old_neighbor_ratio = node->window_ratios[neighbor_idx];
