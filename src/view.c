@@ -1004,15 +1004,43 @@ struct window_node *view_add_window_node_with_insertion_point(struct view *view,
             if (view->root->window_regions[i] == REGION_MAIN) main_count++;
         }
 
-        int idx = view->root->window_count;
-        view->root->window_list[idx] = window->id;
+        // Respect window_insertion_point config for main-stack layout
+        int insert_pos = 0; // default: first (top of list)
+        if (g_space_manager.window_insertion_point == INSERT_LAST) {
+            insert_pos = view->root->window_count;
+        } else if (g_space_manager.window_insertion_point == INSERT_FOCUSED) {
+            // Find focused window position in window_list
+            for (int i = 0; i < view->root->window_count; i++) {
+                if (view->root->window_list[i] == g_window_manager.focused_window_id) {
+                    insert_pos = i + 1; // insert after focused
+                    break;
+                }
+            }
+        }
+        // INSERT_FIRST uses default insert_pos = 0
+
+        // Insert into window_list at the determined position
+        if (insert_pos < view->root->window_count) {
+            memmove(view->root->window_list + insert_pos + 1,
+                    view->root->window_list + insert_pos,
+                    sizeof(uint32_t) * (view->root->window_count - insert_pos));
+            memmove(view->root->window_regions + insert_pos + 1,
+                    view->root->window_regions + insert_pos,
+                    sizeof(uint8_t) * (view->root->window_count - insert_pos));
+            memmove(view->root->window_ratios + insert_pos + 1,
+                    view->root->window_ratios + insert_pos,
+                    sizeof(float) * (view->root->window_count - insert_pos));
+        }
+        view->root->window_list[insert_pos] = window->id;
+
+        // Also update window_order (for focus) - always insert at position 0 to focus new window
         memmove(view->root->window_order + 1, view->root->window_order, sizeof(uint32_t) * view->root->window_count);
         view->root->window_order[0] = window->id;
 
         if (main_count < view->main_nmain) {
-            view->root->window_regions[idx] = REGION_MAIN;
+            view->root->window_regions[insert_pos] = REGION_MAIN;
         } else {
-            view->root->window_regions[idx] = REGION_STACK;
+            view->root->window_regions[insert_pos] = REGION_STACK;
         }
 
         view->root->window_count++;
