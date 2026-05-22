@@ -2,6 +2,7 @@
 typedef CONNECTION_CALLBACK(connection_callback);
 
 static mach_port_t (* CGSGetConnectionPortById)(int);
+static int64_t (* SLSPerformAsynchronousBridgedWindowManagementOperation)(void *);
 extern mach_port_t mig_get_special_reply_port(void);
 extern AXUIElementRef _AXUIElementCreateWithRemoteToken(CFDataRef data);
 extern AXError _AXUIElementGetWindow(AXUIElementRef ref, uint32_t *wid);
@@ -51,6 +52,7 @@ extern CGError SLSGetDockRectWithReason(int cid, CGRect *rect, int *reason);
 extern Boolean CoreDockGetAutoHideEnabled(void);
 extern void CoreDockGetOrientationAndPinning(int *orientation, int *pinning);
 extern CFStringRef SLSCopyManagedDisplayForSpace(int cid, uint64_t sid);
+extern CGError SLSSpaceSetFrontPSN(int cid, uint64_t sid, ProcessSerialNumber psn);
 extern int SLSSpaceGetType(int cid, uint64_t sid);
 extern CFStringRef SLSSpaceCopyName(int cid, uint64_t sid);
 extern CFArrayRef SLSCopyWindowsWithOptionsAndTags(int cid, uint32_t owner, CFArrayRef spaces, uint32_t options, uint64_t *set_tags, uint64_t *clear_tags);

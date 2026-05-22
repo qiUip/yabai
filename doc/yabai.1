@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: yabai
 .\"    Author: [see the "AUTHOR(S)" section]
-.\" Generator: Asciidoctor 2.0.23
-.\"      Date: 2025-12-10
+.\" Generator: Asciidoctor 2.0.26
+.\"      Date: 2026-05-08
 .\"    Manual: Yabai Manual
 .\"    Source: Yabai
 .\"  Language: English
 .\"
-.TH "YABAI" "1" "2025-12-10" "Yabai" "Yabai Manual"
+.TH "YABAI" "1" "2026-05-08" "Yabai" "Yabai Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -243,6 +243,15 @@ Specify where new managed windows will be inserted.
 Windows will keep their zoom\-state through layout changes.
 .RE
 .sp
+\fBskip_window_focus_animation\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Bypass macOS space animation when an application or window on an inactive space is focused.
+.br
+You should only enable this if you do NOT use the scripting addition.
+.br
+The scripting addition implements the same functionality in a more robust way.
+.RE
+.sp
 \fBwindow_shadow\fP [\fI<BOOL_SEL>|float\fP]
 .RS 4
 Draw shadow for windows.
@@ -411,8 +420,6 @@ yabai \-m space [\fI<SPACE_SEL>\fP] \fI<COMMAND>\fP
 \fB\-\-focus\fP \fI<SPACE_SEL>\fP
 .RS 4
 Focus the given space.
-.br
-System Integrity Protection must be partially disabled.
 .RE
 .sp
 \fB\-\-switch\fP \fI<SPACE_SEL>\fP
@@ -571,7 +578,6 @@ Send the selected window to the given display.
 \fB\-\-space\fP \fI<SPACE_SEL>\fP
 .RS 4
 Send the selected window to the given space.
-System Integrity Protection must be partially disabled on macOS Monterey 12.7+, Ventura 13.6+, Sonoma 14.5+, and macOS Sequoia.
 .RE
 .sp
 \fB\-\-swap\fP \fI<WINDOW_SEL>\fP

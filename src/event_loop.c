@@ -8,6 +8,10 @@ extern enum mission_control_mode g_mission_control_mode;
 extern int g_connection;
 extern void *g_workspace_context;
 extern int g_layer_below_window_level;
+volatile bool __pending_window_focus;
+volatile bool __pending_gesture;
+volatile uint64_t __last_gesture_time;
+volatile uint64_t __last_cmd_tab_time;
 
 static void update_window_notifications(void)
 {
@@ -303,6 +307,7 @@ static EVENT_HANDLER(APPLICATION_TERMINATED)
         }
 
         if (g_mouse_state.window == window) g_mouse_state.window = NULL;
+        if (g_mouse_state.ffm_window_id == window->id) g_mouse_state.ffm_window_id = 0;
 
         if (window->is_eligible) {
             event_signal_push(SIGNAL_WINDOW_DESTROYED, window);
@@ -359,6 +364,24 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
         return;
     }
 
+    if (g_space_manager.skip_window_focus_animation) {
+        uint64_t psn_sid = process_manager_active_space_for_psn(application->connection);
+
+        uint64_t last_cmd_tab_time = __atomic_load_n(&__last_cmd_tab_time, __ATOMIC_RELAXED);
+        float dt = ((float) read_os_timer() - last_cmd_tab_time) * (1000.0f / (float)read_os_freq());
+        if (dt > 1500.0f) {
+            CFTypeRef dummy = NULL;
+            AXUIElementCopyAttributeValue(application->ref, CFSTR("__fence"), &dummy);
+        }
+
+        if (__atomic_load_n(&__pending_window_focus, __ATOMIC_RELAXED) == false) {
+            if (psn_sid && !space_is_visible(psn_sid)) {
+                SLSSpaceSetFrontPSN(g_connection, psn_sid, process->psn);
+                space_manager_focus_space_using_gesture(space_display_id(psn_sid), psn_sid);
+            }
+        }
+    }
+
     struct application *deactivated_application = window_manager_find_application(&g_window_manager, g_process_manager.front_pid);
     if (deactivated_application) event_signal_push(SIGNAL_APPLICATION_DEACTIVATED, deactivated_application);
 
@@ -404,6 +427,7 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
 
     window_did_receive_focus(&g_window_manager, &g_mouse_state, window);
     event_signal_push(SIGNAL_WINDOW_FOCUSED, window);
+    __atomic_store_n(&__pending_window_focus, false, __ATOMIC_RELEASE);
 }
 #pragma clang diagnostic pop
 
@@ -609,6 +633,7 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
     }
 
     if (g_mouse_state.window == window) g_mouse_state.window = NULL;
+    if (g_mouse_state.ffm_window_id == window->id) g_mouse_state.ffm_window_id = 0;
 
     if (window->is_eligible) {
         event_signal_push(SIGNAL_WINDOW_DESTROYED, window);
@@ -626,9 +651,10 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
 
 static EVENT_HANDLER(WINDOW_FOCUSED)
 {
+    __atomic_store_n(&__pending_window_focus, false, __ATOMIC_RELEASE);
     uint32_t window_id = (uint32_t)(intptr_t) context;
-    struct window *window = window_manager_find_window(&g_window_manager, window_id);
 
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
     if (!window) {
         window_manager_add_lost_focused_event(&g_window_manager, window_id);
         return;
@@ -649,6 +675,15 @@ static EVENT_HANDLER(WINDOW_FOCUSED)
     }
 
     debug("%s: %s %d\n", __FUNCTION__, window->application->name, window->id);
+
+    if (g_space_manager.skip_window_focus_animation) {
+        uint64_t sid = window_space(window->id);
+        if (sid && !space_is_visible(sid)) {
+            SLSSpaceSetFrontPSN(g_connection, sid, window->application->psn);
+            space_manager_focus_space_using_gesture(space_display_id(sid), sid);
+        }
+    }
+
     window_did_receive_focus(&g_window_manager, &g_mouse_state, window);
     event_signal_push(SIGNAL_WINDOW_FOCUSED, window);
 }
@@ -1337,6 +1372,11 @@ static EVENT_HANDLER(MOUSE_MOVED)
     if (mission_control_is_active())               goto out;
     if (g_mouse_state.ffm_window_id)               goto out;
 
+    if (__atomic_load_n(&__pending_gesture, __ATOMIC_RELAXED)) goto out;
+    uint64_t last_gesture_time = __atomic_load_n(&__last_gesture_time, __ATOMIC_RELAXED);
+    float dt = ((float) read_os_timer() - last_gesture_time) * (1000.0f / (float)read_os_freq());
+    if (dt < 1250.0f) goto out;
+
     CGPoint point = CGEventGetLocation(context);
     struct window *window = window_manager_find_window_at_point(&g_window_manager, point);
 
@@ -1353,27 +1393,30 @@ static EVENT_HANDLER(MOUSE_MOVED)
             //
 
             CFArrayRef window_list = SLSCopyAssociatedWindows(g_connection, window->id);
-            int window_count = CFArrayGetCount(window_list);
+            if (window_list) {
+                int window_count = CFArrayGetCount(window_list);
 
-            uint32_t child_wid;
-            for (int i = 0; i < window_count; ++i) {
-                CFNumberGetValue(CFArrayGetValueAtIndex(window_list, i), kCFNumberSInt32Type, &child_wid);
-                struct window *child = window_manager_find_window(&g_window_manager, child_wid);
-                if (!child) continue;
+                uint32_t child_wid;
+                for (int i = 0; i < window_count; ++i) {
+                    CFNumberGetValue(CFArrayGetValueAtIndex(window_list, i), kCFNumberSInt32Type, &child_wid);
+                    struct window *child = window_manager_find_window(&g_window_manager, child_wid);
+                    if (!child) continue;
 
-                CFTypeRef role = window_role(child);
-                if (!role) continue;
+                    CFTypeRef role = window_role(child);
+                    if (!role) continue;
 
-                bool valid = CFEqual(role, kAXSheetRole) || CFEqual(role, kAXDrawerRole);
-                CFRelease(role);
+                    bool valid = CFEqual(role, kAXSheetRole) || CFEqual(role, kAXDrawerRole);
+                    CFRelease(role);
 
-                if (valid) {
-                    window = child;
-                    break;
+                    if (valid) {
+                        window = child;
+                        break;
+                    }
                 }
+
+                CFRelease(window_list);
             }
 
-            CFRelease(window_list);
             window_manager_focus_window_without_raise(&window->application->psn, window->id);
             g_mouse_state.ffm_window_id = window->id;
         } else if (g_window_manager.ffm_mode == FFM_AUTORAISE) {
@@ -1558,12 +1601,10 @@ static EVENT_HANDLER(MENU_CLOSED)
     debug("%s\n", __FUNCTION__);
     --is_menu_open;
 
-    if (is_menu_open < 0) {
-        is_menu_open = 0;
-    }
-
     if (is_menu_open == 0) {
         g_window_manager.ffm_mode = ffm_value;
+    } else if (is_menu_open < 0) {
+        is_menu_open = 0;
     }
 }
 

@@ -354,24 +354,38 @@ CGRect display_manager_dock_rect(void)
 
 bool display_manager_active_display_is_animating(void)
 {
-    CFStringRef uuid = display_manager_active_display_uuid();
-    assert(uuid);
+    if (workspace_is_macos_bigsur()   ||
+        workspace_is_macos_monterey() ||
+        workspace_is_macos_ventura())
+    {
+        CFStringRef uuid = display_manager_active_display_uuid();
+        assert(uuid);
 
-    bool result = SLSManagedDisplayIsAnimating(g_connection, uuid);
-    CFRelease(uuid);
+        bool result = SLSManagedDisplayIsAnimating(g_connection, uuid);
+        CFRelease(uuid);
 
-    return result;
+        return result;
+    }
+
+    return false; // This does not return a correct result on modern macOS versions.
 }
 
 bool display_manager_display_is_animating(uint32_t did)
 {
-    CFStringRef uuid = display_uuid(did);
-    if (!uuid) return false;
+    if (workspace_is_macos_bigsur()   ||
+        workspace_is_macos_monterey() ||
+        workspace_is_macos_ventura())
+    {
+        CFStringRef uuid = display_uuid(did);
+        if (!uuid) return false;
 
-    bool result = SLSManagedDisplayIsAnimating(g_connection, uuid);
-    CFRelease(uuid);
+        bool result = SLSManagedDisplayIsAnimating(g_connection, uuid);
+        CFRelease(uuid);
 
-    return result;
+        return result;
+    }
+
+    return false; // This does not return a correct result on modern macOS versions.
 }
 
 int display_manager_active_display_count(void)
@@ -391,21 +405,22 @@ uint32_t *display_manager_active_display_list(int *count)
 
 static AXUIElementRef display_manager_find_element_at_point(CGPoint point)
 {
-    CFTypeRef role;
-    CFTypeRef window_ref;
-    AXUIElementRef element_ref;
-
+    AXUIElementRef element_ref = NULL;
     AXUIElementCopyElementAtPosition(g_window_manager.system_element, point.x, point.y, &element_ref);
     if (!element_ref) return NULL;
 
+    CFTypeRef role = NULL;
     AXUIElementCopyAttributeValue(element_ref, kAXRoleAttribute, &role);
+    if (!role) return NULL;
+
     if (CFEqual(role, kAXWindowRole)) {
-        window_ref = element_ref;
-    } else {
-        AXUIElementCopyAttributeValue(element_ref, kAXWindowAttribute, &window_ref);
-        CFRelease(element_ref);
+        CFRelease(role);
+        return element_ref;
     }
 
+    CFTypeRef window_ref = NULL;
+    AXUIElementCopyAttributeValue(element_ref, kAXWindowAttribute, &window_ref);
+    CFRelease(element_ref);
     CFRelease(role);
     return window_ref;
 }
@@ -443,6 +458,8 @@ void display_manager_set_active_display_id(uint32_t did)
     CFRelease(uuid);
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 void display_manager_focus_display(uint32_t did, uint64_t sid)
 {
     struct window *window = window_manager_find_window_on_space_by_rank_filtering_window(&g_window_manager, sid, 1, 0);
@@ -451,10 +468,17 @@ void display_manager_focus_display(uint32_t did, uint64_t sid)
         window_manager_center_mouse(&g_window_manager, window);
         display_manager_set_active_display_id(did);
     } else {
-        CGWarpMouseCursorPosition(display_center(did));
+        CGPoint point = display_center(did);
+        CGWarpMouseCursorPosition(point);
         display_manager_set_active_display_id(did);
+
+        if (space_manager_active_space() != display_space_id(did)) {
+            CGPostMouseEvent(point, false, 1, true);
+            CGPostMouseEvent(point, false, 1, false);
+        }
     }
 }
+#pragma clang diagnostic pop
 
 enum space_op_error display_manager_focus_space(uint32_t did, uint64_t sid)
 {

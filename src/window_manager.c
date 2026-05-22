@@ -960,13 +960,25 @@ void window_manager_set_window_frame(struct window *window, float x, float y, fl
     //
 
     AX_ENHANCED_UI_WORKAROUND(window->application->ref, {
-        // NOTE(asmvik): Due to macOS constraints (visible screen-area), we might need to resize the window *before* moving it.
-        window_manager_resize_window(window, width, height);
+        CGPoint position = CGPointMake(x, y);
+        CFTypeRef position_ref = AXValueCreate(kAXValueTypeCGPoint, (void *) &position);
 
-        window_manager_move_window(window, x, y);
+        CGSize size = CGSizeMake(width, height);
+        CFTypeRef size_ref = AXValueCreate(kAXValueTypeCGSize, (void *) &size);
+
+        // NOTE(asmvik): Due to macOS constraints (visible screen-area), we might need to resize the window *before* moving it.
+        if (size_ref) AXUIElementSetAttributeValue(window->ref, kAXSizeAttribute, size_ref);
+
+        if (position_ref) {
+            AXUIElementSetAttributeValue(window->ref, kAXPositionAttribute, position_ref);
+            CFRelease(position_ref);
+        }
 
         // NOTE(asmvik): Due to macOS constraints (visible screen-area), we might need to resize the window *after* moving it.
-        window_manager_resize_window(window, width, height);
+        if (size_ref) {
+            AXUIElementSetAttributeValue(window->ref, kAXSizeAttribute, size_ref);
+            CFRelease(size_ref);
+        }
     });
 }
 
@@ -1558,12 +1570,12 @@ void window_manager_focus_window_without_raise(ProcessSerialNumber *window_psn, 
 
         //
         // @hack
-        // Artificially delay the activation by 1ms. This is necessary
+        // Artificially delay the activation by 40ms. This is necessary
         // because some applications appear to be confused if both of
         // the events appear instantaneously.
         //
 
-        usleep(10000);
+        usleep(40000);
 
         g_event_bytes[0x8a] = 0x01;
         memcpy(g_event_bytes + 0x3c, &window_id, sizeof(uint32_t));
@@ -2459,6 +2471,7 @@ void window_manager_send_window_to_space(struct space_manager *sm, struct window
     }
 
     space_manager_move_window_to_space(dst_sid, window);
+    SLSSpaceSetFrontPSN(g_connection, dst_sid, window->application->psn);
 
     if (window_manager_should_manage_window(window)) {
         struct view *view = space_manager_tile_window_on_space(sm, window, dst_sid);

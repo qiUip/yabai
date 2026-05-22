@@ -22,7 +22,7 @@
 
 #define MAJOR  7
 #define MINOR  1
-#define PATCH 16
+#define PATCH 25
 
 struct signal *g_signal_event[SIGNAL_TYPE_COUNT];
 struct process_manager g_process_manager;
@@ -146,6 +146,7 @@ static inline bool configure_settings_and_acquire_lock(void)
     g_layer_below_window_level  = CGWindowLevelForKey(LAYER_BELOW);
     g_layer_above_window_level  = CGWindowLevelForKey(LAYER_ABOVE);
     CGSGetConnectionPortById    = macho_find_symbol("/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight", "_CGSGetConnectionPortById");
+    SLSPerformAsynchronousBridgedWindowManagementOperation = macho_find_symbol("/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight", "__ZL54SLSPerformAsynchronousBridgedWindowManagementOperationP47SLSAsynchronousBridgedWindowManagementOperation");
 
     signal(SIGCHLD, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
@@ -160,7 +161,7 @@ static inline bool configure_settings_and_acquire_lock(void)
     hook_autoreleasepool_release();
 #endif
 
-    int handle = open(g_lock_file, O_CREAT | O_WRONLY, 0600);
+    int handle = open(g_lock_file, O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
     if (handle == -1) {
         error("yabai: could not create lock-file! abort..\n");
     }
@@ -326,6 +327,7 @@ int main(int argc, char **argv)
     }
 
     SLSRegisterConnectionNotifyProc(g_connection, connection_handler, 808, NULL);
+    SLSRegisterConnectionNotifyProc(g_connection, connection_handler, 1202, NULL);
 
     if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
         SLSRegisterConnectionNotifyProc(g_connection, connection_handler, 804, NULL);
