@@ -1166,8 +1166,7 @@ void view_flush_main_stack(struct view *view)
                 sr_idx++;
             } else if (view->main_variant == MAIN_VARIANT_THREE_COLUMN) {
                 // First half of stack goes right, second half goes left
-                // Right gets ceiling(stack_count / 2), left gets floor(stack_count / 2)
-                int right_stack_count = (stack_count + 1) / 2;  // ceiling division
+                int right_stack_count = (stack_count + 1) / 2;
 
                 if (stack_idx < right_stack_count) {
                     // First half → right stack

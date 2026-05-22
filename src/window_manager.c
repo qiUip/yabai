@@ -457,16 +457,15 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 bool need_area_filter = (view->main_variant == MAIN_VARIANT_THREE_COLUMN && my_region == REGION_STACK);
                 bool my_is_left_stack = false;
 
+                // Count total stack windows
+                int stack_count = 0;
+                for (int j = 0; j < node->window_count; j++) {
+                  if (node->window_regions[j] == REGION_STACK)
+                    stack_count++;
+                }
+                int right_stack_count = (stack_count + 1) / 2;
+
                 if (need_area_filter) {
-                    // Count total stack windows
-                    int stack_count = 0;
-                    for (int i = 0; i < node->window_count; i++) {
-                        if (node->window_regions[i] == REGION_STACK) stack_count++;
-                    }
-
-                    // First half of stack goes right, second half goes left
-                    int right_stack_count = (stack_count + 1) / 2;  // ceiling division
-
                     // Calculate my stack index to determine which physical area I'm in
                     int my_stack_idx = 0;
                     for (int i = 0; i < window_idx; i++) {
@@ -478,13 +477,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 for (int i = 0; i < node->window_count; i++) {
                     if (node->window_regions[i] == my_region) {
                         if (need_area_filter) {
-                            // Count total stack windows (same as above)
-                            int stack_count = 0;
-                            for (int j = 0; j < node->window_count; j++) {
-                                if (node->window_regions[j] == REGION_STACK) stack_count++;
-                            }
-                            int right_stack_count = (stack_count + 1) / 2;
-
                             // Calculate this window's stack index to see if it's in same physical area
                             int stack_idx = 0;
                             for (int j = 0; j < i; j++) {
@@ -515,12 +507,6 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
                 if (my_region_idx == -1) return WINDOW_OP_ERROR_INVALID_DST_NODE;
 
-
-                // Yabai calls resize multiple times with different direction flags.
-                // To prevent alternating behavior, we need to skip one edge.
-                // Use dy sign to determine which edge to process:
-                // - Positive dy: process HANDLE_BOTTOM only, skip HANDLE_TOP
-                // - Negative dy: process HANDLE_TOP only, skip HANDLE_BOTTOM
 
                 // Prevent alternation by only allowing one edge per window position:
                 // - Non-bottom windows (have window below): ONLY use BOTTOM edge
@@ -564,15 +550,11 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
                 }
 
                 // Calculate ratio change to achieve dy pixel change
-                // Windows are renormalized when tiled: pixel_height = (ratio / total_region_ratio) * region_height
-                // To change pixel height by dy: dy = (delta_ratio / total_region_ratio) * region_height
-                // Therefore: delta_ratio = dy * total_region_ratio / region_height
                 float ratio_delta = dy * total_region_ratio / node->area.h;
 
                 if (neighbor_idx == -1) return WINDOW_OP_ERROR_INVALID_DST_NODE;
 
                 // Min/max ratios must be scaled by total_region_ratio since raw ratios aren't normalized
-                // For 2 windows, ratios sum to 2.0, so min/max should be 0.1 and 1.9 (not 0.05 and 0.95)
                 float min_ratio = 0.05f * total_region_ratio;
                 float max_ratio = 0.95f * total_region_ratio;
 
